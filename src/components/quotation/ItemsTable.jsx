@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuotation } from '../../context/QuotationContext';
-import { ShoppingCart, Plus, Trash2, Edit, X, Save, ChevronsUpDown } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, Edit, X, Save, ChevronsUpDown, Search } from 'lucide-react';
 
 const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
   const { 
@@ -9,13 +9,17 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
     removeItem, 
     calculatePriceWithoutGST,
     calculatePriceWithGST,
-    GST_RATE
+    GST_RATE,
+    componentsData
   } = useQuotation();
   
   const [editingItemId, setEditingItemId] = useState(null);
   const [editData, setEditData] = useState({});
   const [sortField, setSortField] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   
   // Start editing an item
   const handleEditStart = (item) => {
@@ -172,6 +176,66 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
       }));
     }
   };
+
+  // Handle product search
+  const handleProductSearch = (e) => {
+    const searchValue = e.target.value;
+    setSearchTerm(searchValue);
+    
+    if (searchValue.trim() === '') {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+    
+    // Search through all components for matches
+    const results = [];
+    const term = searchValue.toLowerCase();
+
+    if (componentsData && Array.isArray(componentsData)) {
+      componentsData.forEach(category => {
+        if (category.models && Array.isArray(category.models)) {
+          category.models.forEach(model => {
+            if (
+              model.model.toLowerCase().includes(term) ||
+              category.brand.toLowerCase().includes(term) ||
+              category.category.toLowerCase().includes(term)
+            ) {
+              results.push({
+                id: `${category.category}-${category.brand}-${model.model}`,
+                category: category.category,
+                brand: category.brand,
+                model: model.model,
+                hsn_sac: model["HSN/SAC"],
+                warranty: model.warranty,
+                purchase_with_gst: model.purchase_with_GST,
+                sale_with_gst: model.sale_with_GST,
+                gst_percentage: GST_RATE
+              });
+            }
+          });
+        }
+      });
+    }
+    
+    setSearchResults(results);
+    setShowSearchResults(results.length > 0);
+  };
+
+  // Add item from search results
+  const handleAddItemFromSearch = (item) => {
+    const newItem = {
+      ...item,
+      id: Date.now().toString(),
+      quantity: 1
+    };
+    
+    updateItem(newItem.id, newItem);
+    setSearchTerm('');
+    setSearchResults([]);
+    setShowSearchResults(false);
+    setSuccessMessage(`${item.model} added to quotation`);
+  };
   
   return (
     <div className="bg-gradient-to-br from-gray-800 to-gray-900 p-5 rounded-lg shadow-lg">
@@ -182,11 +246,51 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
         </h2>
       </div>
       
+      {/* Product Search Field */}
+      <div className="mb-4 relative">
+        <div className="flex items-center bg-gray-700 border border-gray-600 rounded-lg overflow-hidden">
+          <Search className="mx-3 h-5 w-5 text-gray-400" />
+          <input 
+            type="text"
+            value={searchTerm}
+            onChange={handleProductSearch}
+            placeholder="Search for products to add (model, brand, category)..."
+            className="w-full bg-transparent border-none px-0 py-2 text-white focus:outline-none"
+          />
+        </div>
+        
+        {/* Search Results Dropdown */}
+        {showSearchResults && (
+          <div className="absolute z-20 mt-1 w-full bg-gray-800 border border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+            <ul className="py-1">
+              {searchResults.map(item => (
+                <li 
+                  key={item.id} 
+                  className="px-4 py-2 hover:bg-gray-700 cursor-pointer"
+                  onClick={() => handleAddItemFromSearch(item)}
+                >
+                  <div className="flex justify-between">
+                    <div>
+                      <span className="text-white font-medium">{item.model}</span>
+                      <span className="text-gray-400 ml-2">{item.category}</span>
+                    </div>
+                    <div className="text-green-500">₹{item.sale_with_gst.toLocaleString()}</div>
+                  </div>
+                  <div className="text-gray-500 text-sm">
+                    {item.brand} • {item.warranty}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+      
       {items.length === 0 ? (
         <div className="bg-gray-700 border border-gray-600 rounded-lg p-6 text-center my-4">
           <p className="text-gray-400 mb-2">No items added yet</p>
           <p className="text-gray-500 text-sm">
-            Use the component browser on the right to add items to this quotation
+            Use the search box above or the component browser to add items to this quotation
           </p>
         </div>
       ) : (
@@ -486,7 +590,7 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
         <div className="text-center mt-4">
           <Plus className="h-8 w-8 text-gray-500 mx-auto mb-2" />
           <p className="text-gray-500">
-            Browse components and click to add them to your quotation
+            Search for products above or browse components to add them to your quotation
           </p>
         </div>
       )}

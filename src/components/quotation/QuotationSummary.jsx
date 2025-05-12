@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuotation } from '../../context/QuotationContext';
-import { Calculator, Save, Printer, FileText, AlertTriangle } from 'lucide-react';
-import { debugFetch } from '../../utils/debugUtils';
+import { Calculator, Save, Printer, FileText, AlertTriangle, GitBranch, Info } from 'lucide-react';
 
 const QuotationSummary = ({ setSuccessMessage, setErrorMessage }) => {
   const { 
@@ -17,11 +16,17 @@ const QuotationSummary = ({ setSuccessMessage, setErrorMessage }) => {
     terms,
     setTerms,
     saveQuotation,
-    togglePrintMode
+    togglePrintMode,
+    currentQuotationId,
+    isRevision,
+    revisionNumber,
+    revisionOf,
+    createRevision
   } = useQuotation();
   
   const [savingQuotation, setSavingQuotation] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [creatingRevision, setCreatingRevision] = useState(false);
   
   // Total calculations
   const totalPurchase = calculateTotalPurchase();
@@ -46,77 +51,34 @@ const QuotationSummary = ({ setSuccessMessage, setErrorMessage }) => {
       
       setSavingQuotation(true);
       
-      // Custom implementation to debug the API request
-      try {
-        // Calculate totals on the client side
-        const total_purchase = calculateTotalPurchase();
-        const total_sale = calculateTotalSale();
-        const total_tax = calculateTotalTax();
-
-        // Validate and clean items data
-        const validatedItems = items.map(item => ({
-          category: item.category || '',
-          brand: item.brand || '',
-          model: item.model || '',
-          hsn_sac: item.hsn_sac || '',
-          warranty: item.warranty || '',
-          quantity: Number(item.quantity) || 1,
-          purchase_with_gst: Number(item.purchase_with_gst) || 0,
-          sale_with_gst: Number(item.sale_with_gst) || 0,
-          gst_percentage: Number(item.gst_percentage) || 18
-        }));
-
-        // Create quotation data
-        const quotationData = {
-          party_id: selectedParty._id,
-          quotation_number: `QT-${Date.now().toString().slice(-6)}`, // Generate a temporary quotation number
-          business_details: {
-            name: "EmpressPC",
-            address: "123 Tech Street, Lucknow, UP 226001",
-            phone: "+91 9876543210",
-            email: "contact@empresspc.in",
-            gstin: "GSTIN1234567890",
-            logo: "/logo.png"
-          },
-          items: validatedItems,
-          total_amount: total_sale,
-          total_purchase: total_purchase,
-          total_tax: total_tax,
-          notes: notes || '',
-          terms_conditions: terms || '',
-          status: 'draft'
-        };
-
-        console.log('Sending quotation data:', JSON.stringify(quotationData, null, 2));
-
-        const response = await fetch('http://localhost:5000/api/quotations', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify(quotationData)
-        });
-
-        // Handle response
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Error response:', errorText);
-          throw new Error(`Failed to save quotation: ${response.status} ${response.statusText}`);
-        }
-
-        const savedQuotation = await response.json();
-        console.log('Quotation saved successfully:', savedQuotation);
-        
-        setSuccessMessage(`Quotation ${savedQuotation.quotation_number || 'draft'} saved successfully!`);
-      } catch (error) {
-        console.error('Error in direct API call:', error);
-        throw error;
-      }
+      // Save the quotation
+      const savedQuotation = await saveQuotation();
+      
+      setSuccessMessage(`Quotation ${savedQuotation.quotation_number || 'draft'} saved successfully!`);
     } catch (error) {
       setErrorMessage(`Failed to save quotation: ${error.message}`);
     } finally {
       setSavingQuotation(false);
+    }
+  };
+  
+  // Handle create revision
+  const handleCreateRevision = async () => {
+    if (!currentQuotationId) {
+      setErrorMessage('Please save this quotation first before creating a revision');
+      return;
+    }
+    
+    try {
+      setCreatingRevision(true);
+      
+      const revision = await createRevision(currentQuotationId);
+      
+      setSuccessMessage(`Revision ${revision.revision_number || 1} created successfully!`);
+    } catch (error) {
+      setErrorMessage(`Failed to create revision: ${error.message}`);
+    } finally {
+      setCreatingRevision(false);
     }
   };
   
@@ -142,6 +104,14 @@ const QuotationSummary = ({ setSuccessMessage, setErrorMessage }) => {
           <Calculator className="mr-2 h-5 w-5 text-orange-500" />
           Quotation Summary
         </h2>
+        
+        {/* Revision indicator */}
+        {isRevision && (
+          <div className="px-2 py-1 bg-purple-600 rounded-md text-white text-sm flex items-center">
+            <GitBranch className="h-4 w-4 mr-1" />
+            Revision {revisionNumber}
+          </div>
+        )}
       </div>
       
       {/* Summary stats */}
@@ -205,6 +175,17 @@ const QuotationSummary = ({ setSuccessMessage, setErrorMessage }) => {
         </div>
       </div>
       
+      {/* Current quotation status */}
+      {currentQuotationId && (
+        <div className="bg-blue-900 bg-opacity-20 p-3 rounded-lg border border-blue-800 mb-4 flex items-start">
+          <Info className="h-5 w-5 text-blue-500 mr-2 flex-shrink-0 mt-0.5" />
+          <div className="text-blue-200 text-sm">
+            <p className="font-medium">Currently Editing: {isRevision ? `Revision ${revisionNumber}` : 'Original Quote'}</p>
+            <p className="mt-1">You can save changes to this quotation or create a new revision.</p>
+          </div>
+        </div>
+      )}
+      
       {/* Notes and Terms toggle */}
       <div className="mb-4">
         <button
@@ -260,41 +241,68 @@ const QuotationSummary = ({ setSuccessMessage, setErrorMessage }) => {
       )}
       
       {/* Action buttons */}
-      <div className="flex space-x-3">
-        <button
-          onClick={handleSaveQuotation}
-          disabled={savingQuotation || items.length === 0 || !selectedParty}
-          className={`flex items-center justify-center px-4 py-2 rounded-lg text-white font-medium flex-1 ${
-            savingQuotation || items.length === 0 || !selectedParty
-              ? 'bg-gray-600 cursor-not-allowed'
-              : 'bg-green-600 hover:bg-green-700'
-          }`}
-        >
-          {savingQuotation ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-5 w-5 mr-2" />
-              Save Quotation
-            </>
-          )}
-        </button>
+      <div className="flex flex-col space-y-3">
+        <div className="flex space-x-3">
+          <button
+            onClick={handleSaveQuotation}
+            disabled={savingQuotation || items.length === 0 || !selectedParty}
+            className={`flex items-center justify-center px-4 py-2 rounded-lg text-white font-medium flex-1 ${
+              savingQuotation || items.length === 0 || !selectedParty
+                ? 'bg-gray-600 cursor-not-allowed'
+                : 'bg-green-600 hover:bg-green-700'
+            }`}
+          >
+            {savingQuotation ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-5 w-5 mr-2" />
+                Save Quotation
+              </>
+            )}
+          </button>
+          
+          <button
+            onClick={handlePrintQuotation}
+            disabled={items.length === 0 || !selectedParty}
+            className={`flex items-center justify-center px-4 py-2 rounded-lg text-white font-medium flex-1 ${
+              items.length === 0 || !selectedParty
+                ? 'bg-gray-600 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700'
+            }`}
+          >
+            <Printer className="h-5 w-5 mr-2" />
+            Print
+          </button>
+        </div>
         
-        <button
-          onClick={handlePrintQuotation}
-          disabled={items.length === 0 || !selectedParty}
-          className={`flex items-center justify-center px-4 py-2 rounded-lg text-white font-medium flex-1 ${
-            items.length === 0 || !selectedParty
-              ? 'bg-gray-600 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700'
-          }`}
-        >
-          <Printer className="h-5 w-5 mr-2" />
-          Print
-        </button>
+        {/* Create revision button */}
+        {currentQuotationId && (
+          <button
+            onClick={handleCreateRevision}
+            disabled={creatingRevision || items.length === 0 || !selectedParty}
+            className={`flex items-center justify-center px-4 py-2 rounded-lg text-white font-medium ${
+              creatingRevision || items.length === 0 || !selectedParty
+                ? 'bg-gray-600 cursor-not-allowed'
+                : 'bg-purple-600 hover:bg-purple-700'
+            }`}
+          >
+            {creatingRevision ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Creating Revision...
+              </>
+            ) : (
+              <>
+                <GitBranch className="h-5 w-5 mr-2" />
+                Create New Revision
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

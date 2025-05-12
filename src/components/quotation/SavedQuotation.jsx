@@ -1,20 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuotation } from '../../context/QuotationContext';
-import { FileText, ChevronDown, ChevronUp, Printer, Copy, Trash2, ExternalLink } from 'lucide-react';
+import { FileText, ChevronDown, ChevronUp, Printer, Copy, Trash2, ExternalLink, GitBranch, Calendar, Clock } from 'lucide-react';
 
 const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
   const { 
     savedQuotations, 
     loadingSaved, 
-    loadSavedQuotations,
-    loadQuotation,
-    selectedParty,
     loadPartyQuotations,
-    togglePrintMode 
+    loadQuotation,
+    createRevision,
+    selectedParty,
+    togglePrintMode,
+    currentQuotationId,
+    isRevision,
+    revisionNumber,
+    revisionOf
   } = useQuotation();
   
   const [showQuotations, setShowQuotations] = useState(false);
   const [loadingQuotation, setLoadingQuotation] = useState(false);
+  const [creatingRevision, setCreatingRevision] = useState(false);
+  const [processingQuotationId, setProcessingQuotationId] = useState(null);
   
   // Use refs to prevent infinite loops
   const partyIdRef = useRef(null);
@@ -58,6 +64,7 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
   const handleLoadQuotation = async (quotationId) => {
     try {
       setLoadingQuotation(true);
+      setProcessingQuotationId(quotationId);
       await loadQuotation(quotationId);
       setSuccessMessage('Quotation loaded successfully');
       return true; // Return success for promise chaining
@@ -66,6 +73,30 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
       return false;
     } finally {
       setLoadingQuotation(false);
+      setProcessingQuotationId(null);
+    }
+  };
+  
+  // Handle creating a revision
+  const handleCreateRevision = async (quotationId) => {
+    try {
+      setCreatingRevision(true);
+      setProcessingQuotationId(quotationId);
+      const revision = await createRevision(quotationId);
+      setSuccessMessage(`Revision ${revision.revision_number || 1} created successfully!`);
+      
+      // Reload the quotations list
+      if (selectedParty && selectedParty._id) {
+        await loadPartyQuotations(selectedParty._id);
+      }
+      
+      return true;
+    } catch (error) {
+      setErrorMessage(`Failed to create revision: ${error.message}`);
+      return false;
+    } finally {
+      setCreatingRevision(false);
+      setProcessingQuotationId(null);
     }
   };
   
@@ -117,6 +148,52 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
     }
   }, [selectedParty?._id]);
   
+  // Organize quotations to show revisions properly
+  const organizeQuotations = (quotations) => {
+    if (!Array.isArray(quotations) || quotations.length === 0) {
+      return [];
+    }
+    
+    // Sort by date (newest first)
+    return [...quotations].sort((a, b) => {
+      const dateA = new Date(a.date || 0);
+      const dateB = new Date(b.date || 0);
+      return dateB - dateA;
+    });
+  };
+  
+  const organizedQuotations = organizeQuotations(savedQuotations);
+  
+  // Get revision indicator
+  const getRevisionIndicator = (quotation) => {
+    if (!quotation.revision_number && !quotation.title) {
+      return null;
+    }
+    
+    // If it has a revision number, show that
+    if (quotation.revision_number) {
+      return (
+        <span className="px-2 py-1 text-xs rounded-full bg-purple-600 text-white ml-2">
+          Rev {quotation.revision_number}
+        </span>
+      );
+    }
+    
+    // If it has a title with a revision pattern, extract that
+    if (quotation.title) {
+      const match = quotation.title.match(/\((\d+)\)$/);
+      if (match) {
+        return (
+          <span className="px-2 py-1 text-xs rounded-full bg-purple-600 text-white ml-2">
+            Rev {match[1]}
+          </span>
+        );
+      }
+    }
+    
+    return null;
+  };
+  
   return (
     <div className="bg-gradient-to-br from-gray-800 to-gray-900 p-4 rounded-lg shadow-lg mb-6">
       <button
@@ -148,7 +225,7 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto"></div>
               <p className="mt-2 text-gray-400">Loading quotations...</p>
             </div>
-          ) : !Array.isArray(savedQuotations) || savedQuotations.length === 0 ? (
+          ) : !Array.isArray(organizedQuotations) || organizedQuotations.length === 0 ? (
             <div className="text-center py-8">
               <FileText className="h-8 w-8 text-gray-500 mx-auto mb-2" />
               <p className="text-gray-500">No saved quotations found</p>
@@ -168,10 +245,13 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
                 <thead>
                   <tr>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                      Quotation #
+                      Quotation
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
                       Date
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                      Valid Until
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
                       Status
@@ -185,17 +265,38 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
                   </tr>
                 </thead>
                 <tbody className="bg-gray-800 divide-y divide-gray-700">
-                  {savedQuotations.map((quotation) => (
-                    <tr key={quotation._id} className="hover:bg-gray-750">
-                      <td className="px-3 py-3 whitespace-nowrap font-medium text-white">
-                        {quotation.quotation_number || 'No number'}
+                  {organizedQuotations.map((quotation) => (
+                    <tr key={quotation._id} className={`hover:bg-gray-750 ${
+                      quotation._id === currentQuotationId ? 'bg-blue-900 bg-opacity-30' : ''
+                    }`}>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className="font-medium text-white">
+                            {quotation.quotation_number || 'Draft'}
+                          </span>
+                          {getRevisionIndicator(quotation)}
+                          {quotation.title && (
+                            <span className="ml-2 text-gray-400 text-sm italic truncate max-w-xs">
+                              {quotation.title}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap text-gray-300">
-                        {formatDate(quotation.date)}
+                        <div className="flex items-center">
+                          <Calendar className="h-3 w-3 mr-1 text-gray-500" />
+                          {formatDate(quotation.date)}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap text-gray-300">
+                        <div className="flex items-center">
+                          <Clock className="h-3 w-3 mr-1 text-gray-500" />
+                          {formatDate(quotation.valid_until)}
+                        </div>
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
                         <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(quotation.status)}`}>
-                          {quotation.status ? (quotation.status.charAt(0).toUpperCase() + quotation.status.slice(1)) : 'Unknown'}
+                          {quotation.status ? (quotation.status.charAt(0).toUpperCase() + quotation.status.slice(1)) : 'Draft'}
                         </span>
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap text-green-400 font-medium">
@@ -207,27 +308,39 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
                         <div className="flex justify-end space-x-2">
                           <button
                             onClick={() => handleLoadQuotation(quotation._id)}
-                            disabled={loadingQuotation}
-                            className="text-blue-500 hover:text-blue-400"
+                            disabled={loadingQuotation || creatingRevision}
+                            className={`text-blue-500 hover:text-blue-400 ${
+                              processingQuotationId === quotation._id ? 'opacity-50' : ''
+                            }`}
                             title="Load"
                           >
-                            <ExternalLink className="h-5 w-5" />
+                            {processingQuotationId === quotation._id && loadingQuotation ? (
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                            ) : (
+                              <ExternalLink className="h-5 w-5" />
+                            )}
                           </button>
                           <button
                             onClick={() => handlePrintQuotation(quotation._id)}
-                            disabled={loadingQuotation}
+                            disabled={loadingQuotation || creatingRevision}
                             className="text-green-500 hover:text-green-400"
                             title="Print"
                           >
                             <Printer className="h-5 w-5" />
                           </button>
                           <button
-                            onClick={() => handleLoadQuotation(quotation._id)}
-                            disabled={loadingQuotation}
-                            className="text-purple-500 hover:text-purple-400"
-                            title="Copy"
+                            onClick={() => handleCreateRevision(quotation._id)}
+                            disabled={loadingQuotation || creatingRevision}
+                            className={`text-purple-500 hover:text-purple-400 ${
+                              processingQuotationId === quotation._id ? 'opacity-50' : ''
+                            }`}
+                            title="Create Revision"
                           >
-                            <Copy className="h-5 w-5" />
+                            {processingQuotationId === quotation._id && creatingRevision ? (
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500"></div>
+                            ) : (
+                              <GitBranch className="h-5 w-5" />
+                            )}
                           </button>
                         </div>
                       </td>
