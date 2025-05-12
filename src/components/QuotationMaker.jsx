@@ -40,7 +40,7 @@ const QuotationMakerContent = () => {
           
           console.log(`Loading party data for ID: ${partyId}`);
           
-          const response = await fetch(`http://localhost:5000/api/parties/${partyId}`, {
+          const response = await fetch(`https://server12may.onrender.com/api/parties/${partyId}`, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',

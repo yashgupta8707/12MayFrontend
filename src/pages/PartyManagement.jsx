@@ -60,7 +60,7 @@ const PartyManagement = () => {
       setError('');
       
       // Updated to use the correct API URL with full path
-      const response = await fetch('http://localhost:5000/api/parties', {
+      const response = await fetch('https://server12may.onrender.com/api/parties', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -123,7 +123,7 @@ const PartyManagement = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:5000/api/parties', {
+      const response = await fetch('https://server12may.onrender.com/api/parties', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -158,7 +158,7 @@ const PartyManagement = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:5000/api/parties/${editingParty._id}`, {
+      const response = await fetch(`https://server12may.onrender.com/api/parties/${editingParty._id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -187,7 +187,7 @@ const PartyManagement = () => {
   const handleDeleteParty = async (id) => {
     if (window.confirm('Are you sure you want to delete this party?')) {
       try {
-        const response = await fetch(`http://localhost:5000/api/parties/${id}`, {
+        const response = await fetch(`https://server12may.onrender.com/api/parties/${id}`, {
           method: 'DELETE',
           headers: {
             'Accept': 'application/json'

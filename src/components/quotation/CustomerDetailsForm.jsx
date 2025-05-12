@@ -59,7 +59,7 @@ const CustomerDetailsForm = () => {
         
         console.log('Fetching all parties...');
         
-        const response = await fetch('http://localhost:5000/api/parties', {
+        const response = await fetch('https://server12may.onrender.com/api/parties', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -116,7 +116,7 @@ const CustomerDetailsForm = () => {
       
       console.log(`Fetching specific party with ID: ${id}`);
       
-      const response = await fetch(`http://localhost:5000/api/parties/${id}`, {
+      const response = await fetch(`https://server12may.onrender.com/api/parties/${id}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
