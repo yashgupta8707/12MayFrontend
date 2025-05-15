@@ -31,7 +31,7 @@ const CustomerDetailsForm = () => {
             (party.name && party.name.toLowerCase().includes(searchTerm)) ||
             (party.phone && party.phone.includes(searchTerm)) ||
             (party.address && party.address.toLowerCase().includes(searchTerm)) ||
-            (party.id && party.id.toString().includes(searchTerm))
+            (party.partyId && party.partyId.toString().includes(searchTerm))
           );
         });
         setFilteredParties(filtered);
@@ -59,7 +59,8 @@ const CustomerDetailsForm = () => {
         
         console.log('Fetching all parties...');
         
-        const response = await fetch('https://server12may.onrender.com/api/parties', {
+        // const response = await fetch('https://server12may.onrender.com/api/parties', {
+        const response = await fetch('http://localhost:5000/api/parties', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -102,46 +103,66 @@ const CustomerDetailsForm = () => {
     fetchParties();
   }, []); // Empty dependency array - only run once
   
-  // Fetch a specific party by ID - only when needed and not already fetched
-  const fetchPartyById = async (id) => {
-    // Prevent duplicate fetches
-    if (fetchPartyIdRef.current === id || fetchingPartiesRef.current) {
-      console.log(`Skipping duplicate party fetch for ID: ${id}`);
-      return;
+  // Enhanced version of fetchPartyById function
+const fetchPartyById = async (id) => {
+  // Prevent duplicate fetches
+  if (fetchPartyIdRef.current === id || fetchingPartiesRef.current) {
+    console.log(`Skipping duplicate party fetch for ID: ${id}`);
+    return;
+  }
+  
+  try {
+    fetchingPartiesRef.current = true;
+    fetchPartyIdRef.current = id;
+    setLoading(true);
+    setError('');
+    
+    console.log(`Fetching specific party with ID: ${id}`);
+    
+    // Use a variable to store your base URL for easier switching
+    const BASE_URL = process.env.NODE_ENV === 'production' 
+      ? 'https://server12may.onrender.com' 
+      : 'http://localhost:5000';
+    
+    const response = await fetch(`${BASE_URL}/api/parties/${id}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    // First check if the response is OK
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Error response (${response.status}):`, errorText);
+      throw new Error(`Failed to fetch party: ${response.status} ${response.statusText}`);
     }
     
-    try {
-      fetchingPartiesRef.current = true;
-      fetchPartyIdRef.current = id;
-      
-      console.log(`Fetching specific party with ID: ${id}`);
-      
-      const response = await fetch(`https://server12may.onrender.com/api/parties/${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch party details');
-      }
-      
-      const party = await response.json();
-      
-      // Only update if we don't already have this party or it's different
-      if (!selectedParty || selectedParty._id !== party._id) {
-        setSelectedParty(party);
-      }
-      
-    } catch (error) {
-      console.error('Error fetching party by ID:', error);
-      setError('Failed to load party details.');
-    } finally {
-      fetchingPartiesRef.current = false;
+    // Check the content type to make sure it's JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('Non-JSON response:', text);
+      throw new Error('Server did not return JSON. Received: ' + contentType);
     }
-  };
+    
+    const party = await response.json();
+    console.log('Received party data:', party);
+    
+    // Only update if we don't already have this party or it's different
+    if (!selectedParty || selectedParty._id !== party._id) {
+      setSelectedParty(party);
+    }
+    
+  } catch (error) {
+    console.error('Error fetching party by ID:', error);
+    setError(`Failed to load party details: ${error.message}`);
+  } finally {
+    setLoading(false);
+    fetchingPartiesRef.current = false;
+  }
+};
   
   // Handle party selection
   const handleSelectParty = (party) => {
@@ -201,6 +222,7 @@ const CustomerDetailsForm = () => {
                     className="px-4 py-2 hover:bg-gray-700 cursor-pointer transition-colors duration-150"
                     onClick={() => handleSelectParty(party)}
                   >
+                    <div className="font-medium text-white">{party.partyId}</div>
                     <div className="font-medium text-white">{party.name}</div>
                     <div className="text-sm text-gray-400 flex items-center mt-1">
                       <Phone className="h-3 w-3 mr-1" /> {party.phone}

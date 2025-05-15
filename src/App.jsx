@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Route, Routes, Navigate, useParams, useNavigat
 import PartyManagement from './pages/PartyManagement';
 import QuotationMaker from './components/QuotationMaker';
 import Navbar from './components/Navbar';
+import Dashboard from './pages/Dashboard';
+import PartyDetails from './pages/PartyDetails';
 
 // Route guard to prevent reloading the same party
 const PartyGuard = ({ navigatedPartyIds, setNavigatedPartyIds }) => {
@@ -50,6 +52,9 @@ function App() {
               </>
             } />
             <Route path="/quotations" element={<QuotationMaker />} />
+            {/* <Route path="/dashboard" element={<Navigate to="/dashboard" replace />} /> */}
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/parties/:partyId" element={<PartyDetails />} />
             <Route path="/" element={<Navigate to="/parties" replace />} />
           </Routes>
         </div>

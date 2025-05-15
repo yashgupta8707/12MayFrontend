@@ -1,8 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { useRef } from "react";
-
-// Create context
-const QuotationContext = createContext();
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 
 // Constants
 const DEFAULT_BUSINESS = {
@@ -16,13 +18,16 @@ const DEFAULT_BUSINESS = {
 
 const GST_RATE = 18; // Default GST rate is 18%
 
+// Create context
+const QuotationContext = createContext();
+
 // Provider component
 export const QuotationProvider = ({ children }) => {
-  // Inside QuotationProvider component
+  // Refs to prevent unnecessary rerenders and API calls
   const prevPartyIdRef = useRef(null);
   const lastFetchedPartyIdRef = useRef(null);
   const isLoadingPartyQuotationsRef = useRef(false);
-  
+
   // State for business details
   const [businessDetails, setBusinessDetails] = useState(DEFAULT_BUSINESS);
 
@@ -45,40 +50,6 @@ export const QuotationProvider = ({ children }) => {
     "1. Prices are valid for the mentioned period only.\n2. Delivery within 3-5 working days after payment confirmation."
   );
 
-  // Define mockComponentsData to use as fallback
-  const mockComponentsData = {
-    PC_Components: [
-      {
-        category: "Processor",
-        brand: "Intel",
-        models: [
-          {
-            model: "Core i5-12400F",
-            "HSN/SAC": "84733099",
-            warranty: "3 Years",
-            purchase_with_GST: 16000,
-            sale_with_GST: 18500,
-          },
-          {
-            model: "Core i7-12700K",
-            "HSN/SAC": "84733099",
-            warranty: "3 Years",
-            purchase_with_GST: 28000,
-            sale_with_GST: 31500,
-          },
-          {
-            model: "Core i9-13900K",
-            "HSN/SAC": "84733099",
-            warranty: "3 Years",
-            purchase_with_GST: 50000,
-            sale_with_GST: 56500,
-          },
-        ],
-      },
-      // Other components as in original file...
-    ],
-  };
-
   // State for print mode
   const [printMode, setPrintMode] = useState(false);
 
@@ -90,7 +61,7 @@ export const QuotationProvider = ({ children }) => {
   const [componentsData, setComponentsData] = useState([]);
   const [loadingComponents, setLoadingComponents] = useState(false);
 
-  // NEW: State for currently loaded quotation (for revision tracking)
+  // State for currently loaded quotation (for revision tracking)
   const [currentQuotationId, setCurrentQuotationId] = useState(null);
   const [isRevision, setIsRevision] = useState(false);
   const [revisionOf, setRevisionOf] = useState(null);
@@ -113,11 +84,13 @@ export const QuotationProvider = ({ children }) => {
   const updateItem = (id, updatedItem) => {
     setItems((prev) => {
       // Check if item exists
-      const exists = prev.some(item => item.id === id);
-      
+      const exists = prev.some((item) => item.id === id);
+
       if (exists) {
         // Update existing item
-        return prev.map((item) => (item.id === id ? { ...item, ...updatedItem } : item));
+        return prev.map((item) =>
+          item.id === id ? { ...item, ...updatedItem } : item
+        );
       } else {
         // Add new item
         return [...prev, updatedItem];
@@ -133,7 +106,9 @@ export const QuotationProvider = ({ children }) => {
   // Calculate total purchase amount
   const calculateTotalPurchase = () => {
     return items.reduce(
-      (sum, item) => sum + item.purchase_with_gst * item.quantity,
+      (sum, item) =>
+        sum +
+        (Number(item.purchase_with_gst) || 0) * (Number(item.quantity) || 1),
       0
     );
   };
@@ -141,7 +116,8 @@ export const QuotationProvider = ({ children }) => {
   // Calculate total sale amount
   const calculateTotalSale = () => {
     return items.reduce(
-      (sum, item) => sum + item.sale_with_gst * item.quantity,
+      (sum, item) =>
+        sum + (Number(item.sale_with_gst) || 0) * (Number(item.quantity) || 1),
       0
     );
   };
@@ -150,9 +126,10 @@ export const QuotationProvider = ({ children }) => {
   const calculateTotalTax = () => {
     return items.reduce((sum, item) => {
       const saleWithoutGst =
-        item.sale_with_gst / (1 + item.gst_percentage / 100);
-      const tax = item.sale_with_gst - saleWithoutGst;
-      return sum + tax * item.quantity;
+        (Number(item.sale_with_gst) || 0) /
+        (1 + (Number(item.gst_percentage) || GST_RATE) / 100);
+      const tax = (Number(item.sale_with_gst) || 0) - saleWithoutGst;
+      return sum + tax * (Number(item.quantity) || 1);
     }, 0);
   };
 
@@ -170,12 +147,18 @@ export const QuotationProvider = ({ children }) => {
 
   // Calculate price without GST
   const calculatePriceWithoutGST = (priceWithGST, gstPercentage = GST_RATE) => {
-    return priceWithGST / (1 + gstPercentage / 100);
+    if (!priceWithGST) return 0;
+    return (
+      Number(priceWithGST) / (1 + (Number(gstPercentage) || GST_RATE) / 100)
+    );
   };
 
   // Calculate price with GST
   const calculatePriceWithGST = (priceWithoutGST, gstPercentage = GST_RATE) => {
-    return priceWithoutGST * (1 + gstPercentage / 100);
+    if (!priceWithoutGST) return 0;
+    return (
+      Number(priceWithoutGST) * (1 + (Number(gstPercentage) || GST_RATE) / 100)
+    );
   };
 
   // Load PC components data
@@ -183,52 +166,24 @@ export const QuotationProvider = ({ children }) => {
     const loadComponentsData = async () => {
       try {
         setLoadingComponents(true);
+        const response = await fetch("http://localhost:5000/api/components", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+        });
 
-        try {
-          // Use the explicit URL with proper headers
-          const response = await fetch("https://server12may.onrender.com/api/components", {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-          });
-
-          // Check if response is OK
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Error response:", errorText);
-            throw new Error(
-              `Failed to fetch components: ${response.status} ${response.statusText}`
-            );
-          }
-
-          // Check the content type
-          const contentType = response.headers.get("content-type");
-          if (!contentType || !contentType.includes("application/json")) {
-            const text = await response.text();
-            console.error("Non-JSON response:", text.substring(0, 500));
-            throw new Error(
-              "Server did not return JSON. Received: " + contentType
-            );
-          }
-
-          const data = await response.json();
-
-          // Use API data if available
-          if (data && data.PC_Components && Array.isArray(data.PC_Components)) {
-            setComponentsData(data.PC_Components);
-          } else {
-            // Fall back to mock data if API response is invalid
-            console.log("API returned invalid data format, using mock data");
-            setComponentsData(mockComponentsData.PC_Components);
-          }
-        } catch (error) {
-          // Catch any errors and use mock data
-          console.error("Error loading components data:", error);
-          console.log("Using fallback component data due to API error");
-          setComponentsData(mockComponentsData.PC_Components);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch components: ${response.status}`);
         }
+
+        const data = await response.json();
+        setComponentsData(data.PC_Components || []);
+      } catch (error) {
+        console.error("Error loading components data:", error);
+        // Set default components if API fails
+        setComponentsData([]);
       } finally {
         setLoadingComponents(false);
       }
@@ -240,7 +195,10 @@ export const QuotationProvider = ({ children }) => {
   // Load party quotations
   const loadPartyQuotations = async (partyId) => {
     // Skip if already loading or if we already loaded quotations for this party
-    if (isLoadingPartyQuotationsRef.current || lastFetchedPartyIdRef.current === partyId) {
+    if (
+      isLoadingPartyQuotationsRef.current ||
+      lastFetchedPartyIdRef.current === partyId
+    ) {
       console.log(
         `Skipping duplicate loadPartyQuotations for party ${partyId}`
       );
@@ -254,7 +212,7 @@ export const QuotationProvider = ({ children }) => {
       console.log(`Fetching quotations for party ID: ${partyId}`);
 
       const response = await fetch(
-        `https://server12may.onrender.com/api/quotations/party/${partyId}`,
+        `http://localhost:5000/api/quotations/party/${partyId}`,
         {
           method: "GET",
           headers: {
@@ -264,21 +222,8 @@ export const QuotationProvider = ({ children }) => {
         }
       );
 
-      // Check if response is OK
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error response:", errorText);
-        throw new Error(
-          `Failed to fetch party quotations: ${response.status} ${response.statusText}`
-        );
-      }
-
-      // Check content type
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error("Non-JSON response:", text.substring(0, 500));
-        throw new Error("Server did not return JSON. Received: " + contentType);
+        throw new Error(`Failed to fetch party quotations: ${response.status}`);
       }
 
       const data = await response.json();
@@ -301,144 +246,188 @@ export const QuotationProvider = ({ children }) => {
     }
   };
 
-  // NEW: Find the next revision number for a quotation base name
-  const findNextRevisionNumber = (baseTitle) => {
-    // Filter quotations that match the base name pattern (e.g., "Quotation" or "Quotation (1)")
-    const relatedQuotations = savedQuotations.filter(quotation => {
-      // Extract the base part of quotation title (before any revision number)
-      const quotationTitle = quotation.title || '';
-      return quotationTitle === baseTitle || quotationTitle.startsWith(`${baseTitle} (`) && quotationTitle.endsWith(')');
-    });
+  // Update these functions in QuotationContext.jsx
+// Find the next revision number for a quotation base name
+const findNextRevisionNumber = (baseTitle) => {
+  // Filter quotations that match the base name pattern (Quote_partyID or Quote_partyID_v2, etc.)
+  const relatedQuotations = savedQuotations.filter((quotation) => {
+    const quotationTitle = quotation.title || "";
     
-    if (relatedQuotations.length === 0) {
-      return 0; // No existing quotations, start with no suffix
+    // Match exact base title or base title with _v{number} suffix
+    return (
+      quotationTitle === baseTitle ||
+      new RegExp(`^${baseTitle}_v\\d+$`).test(quotationTitle)
+    );
+  });
+
+  if (relatedQuotations.length === 0) {
+    return 0; // No existing quotations, start with no suffix
+  }
+
+  // Find the highest revision number
+  let maxRevision = 0;
+  relatedQuotations.forEach((quotation) => {
+    const title = quotation.title || "";
+    const match = title.match(/_v(\d+)$/);
+    if (match) {
+      const revNum = parseInt(match[1], 10);
+      if (revNum > maxRevision) {
+        maxRevision = revNum;
+      }
     }
-    
-    // Find the highest revision number
-    let maxRevision = 0;
-    
-    relatedQuotations.forEach(quotation => {
-      const title = quotation.title || '';
-      // Check if it has a revision number in parentheses
-      const match = title.match(/\((\d+)\)$/);
-      
-      if (match) {
-        const revNum = parseInt(match[1], 10);
-        if (revNum > maxRevision) {
-          maxRevision = revNum;
-        }
-      }
-    });
-    
-    return maxRevision + 1; // Return next revision number
-  };
+  });
 
-  // NEW: Create a revision title based on base title and revision number
-  const createRevisionTitle = (baseTitle, revNum) => {
-    if (revNum === 0) {
-      return baseTitle;
+  return maxRevision + 1; // Return next revision number
+};
+
+// Create a revision title based on base title and revision number
+const createRevisionTitle = (baseTitle, revNum) => {
+  if (revNum === 0) {
+    return baseTitle;
+  }
+  return `${baseTitle}_v${revNum}`;
+};
+// Update just the saveQuotation function in QuotationContext.jsx
+const saveQuotation = async (options = {}) => {
+  try {
+    if (!selectedParty || !selectedParty._id) {
+      throw new Error("Please select a valid party for this quotation");
     }
-    return `${baseTitle} (${revNum})`;
-  };
 
-  // Save quotation with revision support
-  const saveQuotation = async (options = {}) => {
-    try {
-      if (!selectedParty || !selectedParty._id) {
-        throw new Error("Please select a valid party for this quotation");
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error("Please add at least one item to the quotation");
+    }
+
+    // Calculate totals
+    const total_purchase = Number(calculateTotalPurchase());
+    const total_sale = Number(calculateTotalSale());
+    const total_tax = Number(calculateTotalTax());
+
+    // Validate and clean items data - create new objects to avoid mutation
+    const validatedItems = items.map((item, index) => {
+      if (!item.category || !item.brand || !item.model) {
+        throw new Error(
+          `Item ${index + 1} is missing required fields (category, brand, model)`
+        );
       }
 
-      if (!Array.isArray(items) || items.length === 0) {
-        throw new Error("Please add at least one item to the quotation");
+      // Get HSN/SAC from either property name
+      let hsn_sac = "";
+      if (item.hsn_sac) {
+        hsn_sac = String(item.hsn_sac).trim();
+      } else if (item["HSN/SAC"]) {
+        hsn_sac = String(item["HSN/SAC"]).trim();
+      } else {
+        hsn_sac = "84733099"; // Default HSN code for computer parts
       }
 
-      // Calculate totals on the client side
-      const total_purchase = calculateTotalPurchase();
-      const total_sale = calculateTotalSale();
-      const total_tax = calculateTotalTax();
-
-      // Validate and clean items data
-      const validatedItems = items.map((item) => ({
-        category: item.category || "",
-        brand: item.brand || "",
-        model: item.model || "",
-        hsn_sac: item.hsn_sac || "",
-        warranty: item.warranty || "",
+      // Create a NEW clean object without id fields
+      return {
+        category: String(item.category).trim(),
+        brand: String(item.brand).trim(),
+        model: String(item.model).trim(),
+        hsn_sac: hsn_sac,
+        warranty: String(item.warranty || "").trim(),
         quantity: Number(item.quantity) || 1,
         purchase_with_gst: Number(item.purchase_with_gst) || 0,
         sale_with_gst: Number(item.sale_with_gst) || 0,
         gst_percentage: Number(item.gst_percentage) || GST_RATE,
-      }));
+      };
+    });
 
-      // Format dates correctly
-      const formattedValidUntil =
-        validUntil instanceof Date
+    // Format dates
+    let validUntilDate;
+    try {
+      validUntilDate =
+        validUntil instanceof Date && !isNaN(validUntil.getTime())
           ? validUntil.toISOString()
-          : new Date().toISOString();
+          : new Date(
+              new Date().setDate(new Date().getDate() + 15)
+            ).toISOString();
+    } catch (e) {
+      console.error("Error formatting validUntil date:", e);
+      validUntilDate = new Date(
+        new Date().setDate(new Date().getDate() + 15)
+      ).toISOString();
+    }
 
-      const formattedDate =
-        quotationDate instanceof Date
+    let quotationDateFormatted;
+    try {
+      quotationDateFormatted =
+        quotationDate instanceof Date && !isNaN(quotationDate.getTime())
           ? quotationDate.toISOString()
           : new Date().toISOString();
+    } catch (e) {
+      console.error("Error formatting quotationDate:", e);
+      quotationDateFormatted = new Date().toISOString();
+    }
 
-      // Base quotation title - use the selected party's name or a default
-      const baseTitle = options.baseTitle || `Quotation for ${selectedParty.name}`;
-      
-      // If this is a revision, determine the next revision number
-      let nextRevNum = 0;
-      
-      if (options.createRevision || isRevision) {
-        // If explicitly creating a revision or continuing an existing revision
-        const sourceId = options.sourceQuotationId || revisionOf;
-        if (sourceId) {
-          // Find the original quotation
-          const sourceQuotation = savedQuotations.find(q => q._id === sourceId);
-          if (sourceQuotation) {
-            const sourceTitle = sourceQuotation.title || baseTitle;
-            nextRevNum = findNextRevisionNumber(sourceTitle);
-          } else {
-            nextRevNum = findNextRevisionNumber(baseTitle);
-          }
+    // Base quotation title with party ID for better identification
+    const baseTitle = options.baseTitle || `Quote_${selectedParty._id}`;
+
+    // Revision handling
+    let nextRevNum = 0;
+    if (options.createRevision || isRevision) {
+      const sourceId = options.sourceQuotationId || revisionOf;
+      if (sourceId && Array.isArray(savedQuotations)) {
+        const sourceQuotation = savedQuotations.find(
+          (q) => q._id === sourceId
+        );
+        if (sourceQuotation) {
+          const sourceTitle = sourceQuotation.title || baseTitle;
+          nextRevNum = findNextRevisionNumber(sourceTitle);
         } else {
           nextRevNum = findNextRevisionNumber(baseTitle);
         }
+      } else {
+        nextRevNum = findNextRevisionNumber(baseTitle);
       }
-      
-      // Generate title with revision number if needed
-      const quotationTitle = createRevisionTitle(baseTitle, nextRevNum);
+    }
 
-      // Create quotation data
-      const quotationData = {
-        party_id: selectedParty._id,
-        title: quotationTitle,
-        date: formattedDate,
-        valid_until: formattedValidUntil,
-        business_details: {
-          name: businessDetails.name || DEFAULT_BUSINESS.name,
-          address: businessDetails.address || DEFAULT_BUSINESS.address,
-          phone: businessDetails.phone || DEFAULT_BUSINESS.phone,
-          email: businessDetails.email || DEFAULT_BUSINESS.email,
-          gstin: businessDetails.gstin || DEFAULT_BUSINESS.gstin,
-          logo: businessDetails.logo || DEFAULT_BUSINESS.logo,
-        },
-        items: validatedItems,
-        total_amount: total_sale,
-        total_purchase: total_purchase,
-        total_tax: total_tax,
-        notes: notes || "",
-        terms_conditions: terms || "",
-        status: "draft",
-        
-        // Add revision tracking if this is a revision
-        ...(nextRevNum > 0 && {
-          revision_number: nextRevNum,
-          revision_of: options.sourceQuotationId || revisionOf
-        })
-      };
+    // Generate title with revision number (using underscore format)
+    const quotationTitle = nextRevNum > 0 ? `${baseTitle}_v${nextRevNum}` : baseTitle;
 
-      console.log("Sending quotation data:", JSON.stringify(quotationData));
+    // Prepare business details object - with null checks
+    const businessDetailsObj = {
+      name: businessDetails?.name || DEFAULT_BUSINESS.name,
+      address: businessDetails?.address || DEFAULT_BUSINESS.address,
+      phone: businessDetails?.phone || DEFAULT_BUSINESS.phone,
+      email: businessDetails?.email || DEFAULT_BUSINESS.email,
+      gstin: businessDetails?.gstin || DEFAULT_BUSINESS.gstin,
+      logo: businessDetails?.logo || DEFAULT_BUSINESS.logo,
+    };
 
-      const response = await fetch("https://server12may.onrender.com/api/quotations", {
+    // Prepare the quotation data - as a fresh object without any id field
+    const quotationData = {
+      party_id: selectedParty._id,
+      title: quotationTitle,
+      date: quotationDateFormatted,
+      valid_until: validUntilDate,
+      business_details: businessDetailsObj,
+      items: validatedItems,
+      total_amount: total_sale,
+      total_purchase: total_purchase,
+      total_tax: total_tax,
+      notes: notes || "",
+      terms_conditions: terms || "",
+      status: "draft",
+    };
+
+    // Add revision tracking if this is a revision
+    if (nextRevNum > 0) {
+      quotationData.revision_number = nextRevNum;
+      if (options.sourceQuotationId || revisionOf) {
+        quotationData.revision_of = options.sourceQuotationId || revisionOf;
+      }
+    }
+
+    console.log("Sending quotation data:", JSON.stringify(quotationData, null, 2));
+
+    // Send the request
+    let responseData;
+
+    try {
+      const response = await fetch("http://localhost:5000/api/quotations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -449,69 +438,74 @@ export const QuotationProvider = ({ children }) => {
 
       // Check if response is OK
       if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const errorData = await response.json();
+        const errorText = await response.text();
+        console.error("Error response:", errorText);
+
+        // Try to parse as JSON if possible
+        try {
+          const errorJson = JSON.parse(errorText);
           throw new Error(
-            errorData.message || `Server error: ${response.status}`
+            errorJson.message || `Server error: ${response.status}`
           );
-        } else {
-          const errorText = await response.text();
-          console.error("Error response:", errorText);
+        } catch (jsonError) {
+          // If not valid JSON, use the text directly
           throw new Error(
-            `Failed to save quotation: ${response.status} ${response.statusText}`
+            `Failed to save: ${response.status} ${response.statusText}. ${errorText}`
           );
         }
       }
 
-      // Check content type
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error("Non-JSON response:", text.substring(0, 500));
-        throw new Error("Server did not return JSON. Received: " + contentType);
-      }
-
-      const savedQuotation = await response.json();
-
-      // Update the saved quotations list
-      setSavedQuotations((prev) => [savedQuotation, ...prev]);
-
-      // Set the quotation number from the saved quotation
-      if (savedQuotation.quotation_number) {
-        setQuotationNumber(savedQuotation.quotation_number);
-      }
+      // Read the response body as text first
+      const responseText = await response.text();
+      console.log("Raw response:", responseText);
       
-      // Update revision tracking state
-      setCurrentQuotationId(savedQuotation._id);
-      if (nextRevNum > 0) {
-        setIsRevision(true);
-        setRevisionNumber(nextRevNum);
-        setRevisionOf(options.sourceQuotationId || revisionOf);
-      } else {
-        setIsRevision(false);
-        setRevisionNumber(0);
-        setRevisionOf(null);
+      // Parse the response
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Error parsing response:", parseError);
+        throw new Error("Invalid JSON response from server");
       }
-
-      return savedQuotation;
-    } catch (error) {
-      console.error("Error saving quotation:", error);
-      throw error;
+    } catch (fetchError) {
+      console.error("Fetch error:", fetchError);
+      throw new Error(`Request failed: ${fetchError.message}`);
     }
-  };
+
+    // If we got here, we have successfully parsed the response
+    const savedQuotation = responseData;
+
+    // Update the state with the savedQuotation
+    if (savedQuotation.quotation_number) {
+      setQuotationNumber(savedQuotation.quotation_number);
+    }
+    setSavedQuotations((prev) => [savedQuotation, ...prev]);
+    setCurrentQuotationId(savedQuotation._id);
+
+    // Update revision tracking state if needed
+    if (nextRevNum > 0) {
+      setIsRevision(true);
+      setRevisionNumber(nextRevNum);
+      setRevisionOf(options.sourceQuotationId || revisionOf);
+    }
+
+    return savedQuotation;
+  } catch (error) {
+    console.error("Error saving quotation:", error);
+    throw error;
+  }
+};
 
   // Create a new revision of an existing quotation
   const createRevision = async (quotationId) => {
     try {
       // First, load the quotation
       const quotation = await loadQuotation(quotationId);
-      
+
       // Then, save it as a revision
       return await saveQuotation({
         createRevision: true,
         sourceQuotationId: quotationId,
-        baseTitle: quotation.title || `Quotation for ${selectedParty.name}`
+        baseTitle: quotation.title || `Quotation for ${selectedParty.name}`,
       });
     } catch (error) {
       console.error("Error creating revision:", error);
@@ -523,7 +517,7 @@ export const QuotationProvider = ({ children }) => {
   const loadQuotation = async (quotationId) => {
     try {
       const response = await fetch(
-        `https://server12may.onrender.com/api/quotations/${quotationId}`,
+        `http://localhost:5000/api/quotations/${quotationId}`,
         {
           method: "GET",
           headers: {
@@ -533,42 +527,31 @@ export const QuotationProvider = ({ children }) => {
         }
       );
 
-      // Check if response is OK
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error response:", errorText);
-        throw new Error(
-          `Failed to fetch quotation: ${response.status} ${response.statusText}`
-        );
-      }
-
-      // Check content type
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error("Non-JSON response:", text.substring(0, 500));
-        throw new Error("Server did not return JSON. Received: " + contentType);
+        throw new Error(`Failed to fetch quotation: ${response.status}`);
       }
 
       const quotation = await response.json();
 
       // Update all state with the loaded quotation data
       setSelectedParty(quotation.party);
-      setBusinessDetails(quotation.business_details);
+      setBusinessDetails(quotation.business_details || DEFAULT_BUSINESS);
       setItems(
         quotation.items.map((item) => ({
           ...item,
           id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         }))
       );
-      setQuotationNumber(quotation.quotation_number);
-      setQuotationDate(new Date(quotation.date));
+      setQuotationNumber(quotation.quotation_number || "");
+      setQuotationDate(new Date(quotation.date || Date.now()));
       setValidUntil(
-        quotation.valid_until ? new Date(quotation.valid_until) : null
+        quotation.valid_until
+          ? new Date(quotation.valid_until)
+          : new Date(new Date().setDate(new Date().getDate() + 15))
       );
       setNotes(quotation.notes || "");
       setTerms(quotation.terms_conditions || "");
-      
+
       // Set revision tracking information
       setCurrentQuotationId(quotation._id);
       setIsRevision(!!quotation.revision_number);
@@ -604,7 +587,7 @@ export const QuotationProvider = ({ children }) => {
     setPrintMode(!printMode);
   };
 
-  // Context value
+  // Context value - all the values and functions to expose
   const contextValue = {
     // Business details
     businessDetails,
@@ -658,7 +641,7 @@ export const QuotationProvider = ({ children }) => {
     revisionNumber,
     revisionOf,
     createRevision,
-    
+
     // Actions
     saveQuotation,
     loadQuotation,

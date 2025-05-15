@@ -1,6 +1,6 @@
-import React from 'react';
+// In Navbar.jsx
 import { Link, useLocation } from 'react-router-dom';
-import { Users, FileText, Home } from 'lucide-react';
+import { Users, FileText, Home, BarChart2 } from 'lucide-react';
 
 const Navbar = () => {
   const location = useLocation();
@@ -15,12 +15,18 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <Link to="/" className="flex-shrink-0">
-              <span className="font-bold text-xl">EmpressPC</span>
-              <span className="ml-1 text-orange-200 font-light">Quotation Maker</span>
+              <span className="font-bold text-xl">EMPRESSPC.IN</span>
             </Link>
           </div>
           
           <div className="flex space-x-6">
+            <Link 
+              to="/dashboard" 
+              className={`px-3 py-2 hover:text-orange-200 flex items-center ${isActive('/dashboard')}`}
+            >
+              <BarChart2 className="h-5 w-5 mr-1" />
+              Dashboard
+            </Link>
             <Link 
               to="/parties" 
               className={`px-3 py-2 hover:text-orange-200 flex items-center ${isActive('/parties')}`}
