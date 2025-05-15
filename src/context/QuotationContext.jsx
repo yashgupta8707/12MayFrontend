@@ -166,7 +166,7 @@ export const QuotationProvider = ({ children }) => {
     const loadComponentsData = async () => {
       try {
         setLoadingComponents(true);
-        const response = await fetch("http://localhost:5000/api/components", {
+        const response = await fetch("https://server12may.onrender.com/api/components", {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -212,7 +212,7 @@ export const QuotationProvider = ({ children }) => {
       console.log(`Fetching quotations for party ID: ${partyId}`);
 
       const response = await fetch(
-        `http://localhost:5000/api/quotations/party/${partyId}`,
+        `https://server12may.onrender.com/api/quotations/party/${partyId}`,
         {
           method: "GET",
           headers: {
@@ -427,7 +427,7 @@ const saveQuotation = async (options = {}) => {
     let responseData;
 
     try {
-      const response = await fetch("http://localhost:5000/api/quotations", {
+      const response = await fetch("https://server12may.onrender.com/api/quotations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -517,7 +517,7 @@ const saveQuotation = async (options = {}) => {
   const loadQuotation = async (quotationId) => {
     try {
       const response = await fetch(
-        `http://localhost:5000/api/quotations/${quotationId}`,
+        `https://server12may.onrender.com/api/quotations/${quotationId}`,
         {
           method: "GET",
           headers: {

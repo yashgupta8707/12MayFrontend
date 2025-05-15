@@ -26,7 +26,7 @@ const PartyDetails = () => {
       
       try {
         // Fetch party details
-        const partyResponse = await fetch(`http://localhost:5000/api/parties/${partyId}`, {
+        const partyResponse = await fetch(`https://server12may.onrender.com/api/parties/${partyId}`, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
@@ -40,7 +40,7 @@ const PartyDetails = () => {
         const partyData = await partyResponse.json();
         
         // Fetch quotations for this party
-        const quotationsResponse = await fetch(`http://localhost:5000/api/quotations/party/${partyId}`, {
+        const quotationsResponse = await fetch(`https://server12may.onrender.com/api/quotations/party/${partyId}`, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'

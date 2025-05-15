@@ -35,7 +35,7 @@ const Dashboard = () => {
       try {
         // Fetch parties
         const partiesResponse = await fetch(
-          "http://localhost:5000/api/parties",
+          "https://server12may.onrender.com/api/parties",
           {
             headers: {
               "Content-Type": "application/json",
@@ -52,7 +52,7 @@ const Dashboard = () => {
 
         // Fetch all quotations
         const quotationsResponse = await fetch(
-          "http://localhost:5000/api/quotations",
+          "https://server12may.onrender.com/api/quotations",
           {
             headers: {
               "Content-Type": "application/json",

@@ -53,7 +53,7 @@ const PartyManagement = () => {
       setLoading(true);
       setError("");
 
-      const response = await fetch("http://localhost:5000/api/parties", {
+      const response = await fetch("https://server12may.onrender.com/api/parties", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -110,7 +110,7 @@ const PartyManagement = () => {
 
       console.log("Sending party data:", JSON.stringify(formData));
       
-      const response = await fetch("http://localhost:5000/api/parties", {
+      const response = await fetch("https://server12may.onrender.com/api/parties", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -157,7 +157,7 @@ const PartyManagement = () => {
       }
 
       const response = await fetch(
-        `http://localhost:5000/api/parties/${editingParty._id}`,
+        `https://server12may.onrender.com/api/parties/${editingParty._id}`,
         {
           method: "PUT",
           headers: {
@@ -195,7 +195,7 @@ const PartyManagement = () => {
     if (window.confirm("Are you sure you want to delete this party?")) {
       try {
         const response = await fetch(
-          `http://localhost:5000/api/parties/${id}`,
+          `https://server12may.onrender.com/api/parties/${id}`,
           {
             method: "DELETE",
             headers: {

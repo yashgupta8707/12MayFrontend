@@ -65,7 +65,7 @@ const QuotationMakerContent = () => {
           // Try using a different endpoint or include better error handling
           // const response = await fetch(`https://server12may.onrender.com/api/parties/${partyId}`, {
           const response = await fetch(
-            `http://localhost:5000/api/parties/${partyId}`,
+            `https://server12may.onrender.com/api/parties/${partyId}`,
             {
               method: "GET",
               headers: {
