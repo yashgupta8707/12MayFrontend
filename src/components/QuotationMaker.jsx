@@ -190,7 +190,7 @@ const QuotationMakerContent = () => {
           </button>
         </div>
       )}
-      // In QuotationMaker.jsx, update the error message section
+      {/* In QuotationMaker.jsx, update the error message section */}
       {errorMessage && (
         <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-md my-4 animate-fadeIn relative">
           <div className="flex items-center">
@@ -242,18 +242,18 @@ const QuotationMakerContent = () => {
             setErrorMessage={setErrorMessage}
           />
 
+          {/* Items Selection */}
+          <ItemsTable
+            setSuccessMessage={setSuccessMessage}
+            setErrorMessage={setErrorMessage}
+          />
+
           {/* Main Content */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left Column */}
             <div className="lg:col-span-2 space-y-6">
               {/* Business Details */}
               <BusinessDetailsForm />
-
-              {/* Items Selection */}
-              <ItemsTable
-                setSuccessMessage={setSuccessMessage}
-                setErrorMessage={setErrorMessage}
-              />
             </div>
 
             {/* Right Column */}

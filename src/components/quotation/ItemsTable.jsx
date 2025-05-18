@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuotation } from '../../context/QuotationContext';
-import { ShoppingCart, Plus, Trash2, Edit, X, Save, ChevronsUpDown, Search } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, Edit, X, Save, ChevronsUpDown, Search, Filter } from 'lucide-react';
 
 const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
   const { 
@@ -20,8 +20,68 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [advancedSearch, setAdvancedSearch] = useState(false);
+  const [searchFilters, setSearchFilters] = useState({
+    category: true,
+    brand: true,
+    model: true,
+    hsn: true,
+    lastDigits: true
+  });
   
-  // Start editing an item
+  // For tracking price changes
+  const [itemPrices, setItemPrices] = useState({});
+  
+  const searchInputRef = useRef(null);
+  const searchResultsRef = useRef(null);
+  
+  // Format number to 2 decimal places
+  const formatDecimal = (value) => {
+    if (value === undefined || value === null) return '0.00';
+    return Number(value).toFixed(2);
+  };
+  
+  // Initialize item prices when items change
+  useEffect(() => {
+    const newPrices = {};
+    items.forEach(item => {
+      newPrices[item.id] = {
+        purchase_with_gst: item.purchase_with_gst,
+        purchase_without_gst: calculatePriceWithoutGST(item.purchase_with_gst, item.gst_percentage),
+        sale_with_gst: item.sale_with_gst,
+        sale_without_gst: calculatePriceWithoutGST(item.sale_with_gst, item.gst_percentage),
+        quantity: item.quantity,
+        gst_percentage: item.gst_percentage
+      };
+    });
+    setItemPrices(newPrices);
+  }, [items, calculatePriceWithoutGST]);
+  
+  // Handle clicks outside the search results to close it
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchResultsRef.current && !searchResultsRef.current.contains(event.target) &&
+          searchInputRef.current && !searchInputRef.current.contains(event.target)) {
+        setShowSearchResults(false);
+      }
+    };
+    
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+  
+  // Calculate margin for an item
+  const calculateMargin = (item) => {
+    const itemPrice = itemPrices[item.id] || {};
+    const saleWithoutGST = itemPrice.sale_without_gst || calculatePriceWithoutGST(item.sale_with_gst, item.gst_percentage);
+    const purchaseWithoutGST = itemPrice.purchase_without_gst || calculatePriceWithoutGST(item.purchase_with_gst, item.gst_percentage);
+    
+    return saleWithoutGST - purchaseWithoutGST;
+  };
+  
+  // Start editing an item (for non-price fields)
   const handleEditStart = (item) => {
     setEditingItemId(item.id);
     setEditData({
@@ -30,9 +90,6 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
       model: item.model,
       hsn_sac: item.hsn_sac,
       warranty: item.warranty,
-      quantity: item.quantity,
-      purchase_with_gst: item.purchase_with_gst,
-      sale_with_gst: item.sale_with_gst,
       gst_percentage: item.gst_percentage
     });
   };
@@ -41,34 +98,25 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
   const handleSaveEdit = () => {
     try {
       // Validate required fields
-      if (!editData.category || !editData.brand || !editData.model || !editData.quantity) {
-        throw new Error('Category, Brand, Model, and Quantity are required');
+      if (!editData.category || !editData.brand || !editData.model) {
+        throw new Error('Category, Brand, and Model are required');
       }
       
-      // Validate numeric fields
-      if (isNaN(editData.quantity) || editData.quantity <= 0) {
-        throw new Error('Quantity must be a positive number');
+      // Get current item and merge with edits
+      const item = items.find(i => i.id === editingItemId);
+      if (!item) {
+        throw new Error('Item not found');
       }
       
-      if (isNaN(editData.purchase_with_gst) || editData.purchase_with_gst <= 0) {
-        throw new Error('Purchase price must be a positive number');
-      }
-      
-      if (isNaN(editData.sale_with_gst) || editData.sale_with_gst <= 0) {
-        throw new Error('Sale price must be a positive number');
-      }
-      
-      if (isNaN(editData.gst_percentage) || editData.gst_percentage < 0) {
-        throw new Error('GST percentage must be a non-negative number');
-      }
-      
-      // Update the item
+      // Update the item with edited fields while preserving prices
       updateItem(editingItemId, {
-        ...editData,
-        quantity: Number(editData.quantity),
-        purchase_with_gst: Number(editData.purchase_with_gst),
-        sale_with_gst: Number(editData.sale_with_gst),
-        gst_percentage: Number(editData.gst_percentage)
+        ...item,
+        category: editData.category,
+        brand: editData.brand,
+        model: editData.model,
+        hsn_sac: editData.hsn_sac,
+        warranty: editData.warranty,
+        gst_percentage: Number(editData.gst_percentage || GST_RATE)
       });
       
       // Reset editing state
@@ -91,6 +139,93 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
   const handleEditChange = (e) => {
     const { name, value } = e.target;
     setEditData(prev => ({ ...prev, [name]: value }));
+  };
+  
+  // Handle price changes for "with GST" prices
+  const handlePriceWithGSTChange = (itemId, field, value) => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return;
+    
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+    
+    const gstPercentage = item.gst_percentage;
+    const withoutGSTValue = calculatePriceWithoutGST(numValue, gstPercentage);
+    const withoutGSTField = field === 'purchase_with_gst' ? 'purchase_without_gst' : 'sale_without_gst';
+    
+    // Update local state for immediate feedback
+    setItemPrices(prev => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        [field]: numValue,
+        [withoutGSTField]: withoutGSTValue
+      }
+    }));
+    
+    // Debounced update to the actual item
+    clearTimeout(window.priceUpdateTimeout);
+    window.priceUpdateTimeout = setTimeout(() => {
+      // Only update the source field that was changed
+      const updatedItem = { ...item, [field]: numValue };
+      updateItem(itemId, updatedItem);
+    }, 500);
+  };
+  
+  // Handle price changes for "without GST" prices
+  const handlePriceWithoutGSTChange = (itemId, field, value) => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return;
+    
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+    
+    const gstPercentage = item.gst_percentage;
+    const withGSTValue = calculatePriceWithGST(numValue, gstPercentage);
+    const withGSTField = field === 'purchase_without_gst' ? 'purchase_with_gst' : 'sale_with_gst';
+    
+    // Update local state for immediate feedback
+    setItemPrices(prev => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        [field]: numValue,
+        [withGSTField]: withGSTValue
+      }
+    }));
+    
+    // Debounced update to the actual item
+    clearTimeout(window.priceUpdateTimeout);
+    window.priceUpdateTimeout = setTimeout(() => {
+      // Convert to the with-GST price for the update
+      const updatedItem = { ...item, [withGSTField]: withGSTValue };
+      updateItem(itemId, updatedItem);
+    }, 500);
+  };
+  
+  // Handle quantity change
+  const handleQuantityChange = (itemId, value) => {
+    const numValue = parseInt(value);
+    if (isNaN(numValue) || numValue < 1) return;
+    
+    // Update local state for immediate feedback
+    setItemPrices(prev => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        quantity: numValue
+      }
+    }));
+    
+    // Debounced update to the actual item
+    clearTimeout(window.quantityUpdateTimeout);
+    window.quantityUpdateTimeout = setTimeout(() => {
+      const item = items.find(i => i.id === itemId);
+      if (item) {
+        const updatedItem = { ...item, quantity: numValue };
+        updateItem(itemId, updatedItem);
+      }
+    }, 500);
   };
   
   // Handle remove item
@@ -130,59 +265,13 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
       ? aValue - bValue
       : bValue - aValue;
   });
-  
-  // Update purchase price without GST when purchase price with GST changes
-  const handlePurchaseWithGSTChange = (e) => {
-    const withGst = parseFloat(e.target.value);
-    if (!isNaN(withGst)) {
-      setEditData(prev => ({
-        ...prev,
-        purchase_with_gst: withGst
-      }));
-    }
-  };
-  
-  // Update purchase price with GST when purchase price without GST changes
-  const handlePurchaseWithoutGSTChange = (e) => {
-    const withoutGst = parseFloat(e.target.value);
-    if (!isNaN(withoutGst)) {
-      const withGst = calculatePriceWithGST(withoutGst, editData.gst_percentage);
-      setEditData(prev => ({
-        ...prev,
-        purchase_with_gst: withGst
-      }));
-    }
-  };
-  
-  // Update sale price without GST when sale price with GST changes
-  const handleSaleWithGSTChange = (e) => {
-    const withGst = parseFloat(e.target.value);
-    if (!isNaN(withGst)) {
-      setEditData(prev => ({
-        ...prev,
-        sale_with_gst: withGst
-      }));
-    }
-  };
-  
-  // Update sale price with GST when sale price without GST changes
-  const handleSaleWithoutGSTChange = (e) => {
-    const withoutGst = parseFloat(e.target.value);
-    if (!isNaN(withoutGst)) {
-      const withGst = calculatePriceWithGST(withoutGst, editData.gst_percentage);
-      setEditData(prev => ({
-        ...prev,
-        sale_with_gst: withGst
-      }));
-    }
-  };
 
-  // Handle product search
+  // Enhanced product search with improved matching and debugging
   const handleProductSearch = (e) => {
     const searchValue = e.target.value;
     setSearchTerm(searchValue);
     
-    if (searchValue.trim() === '') {
+    if (!searchValue || searchValue.trim() === '') {
       setSearchResults([]);
       setShowSearchResults(false);
       return;
@@ -190,17 +279,106 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
     
     // Search through all components for matches
     const results = [];
-    const term = searchValue.toLowerCase();
-
+    const term = searchValue.toLowerCase().trim();
+    
+    console.log(`Searching for: "${term}" in ${componentsData ? componentsData.length : 0} categories`);
+    
     if (componentsData && Array.isArray(componentsData)) {
       componentsData.forEach(category => {
         if (category.models && Array.isArray(category.models)) {
           category.models.forEach(model => {
-            if (
-              model.model.toLowerCase().includes(term) ||
-              category.brand.toLowerCase().includes(term) ||
-              category.category.toLowerCase().includes(term)
-            ) {
+            // Check for matches in multiple fields
+            const modelName = (model.model || '').toLowerCase();
+            const brandName = (category.brand || '').toLowerCase();
+            const categoryName = (category.category || '').toLowerCase();
+            const hsnCode = model["HSN/SAC"] ? model["HSN/SAC"].toString().toLowerCase() : '';
+            const warranty = (model.warranty || '').toLowerCase();
+            
+            // Calculate a match score to prioritize results
+            let matchScore = 0;
+            let matched = false;
+            
+            // Apply filters based on user preferences
+            if (searchFilters.model) {
+              // Main field exact matches (higher score)
+              if (modelName === term) {
+                matchScore += 100;
+                matched = true;
+              }
+              
+              // Partial matches in model
+              if (modelName.includes(term)) {
+                matchScore += 50;
+                matched = true;
+              }
+            }
+            
+            if (searchFilters.brand) {
+              if (brandName === term) {
+                matchScore += 80;
+                matched = true;
+              }
+              
+              if (brandName.includes(term)) {
+                matchScore += 30;
+                matched = true;
+              }
+            }
+            
+            if (searchFilters.category) {
+              if (categoryName === term) {
+                matchScore += 70;
+                matched = true;
+              }
+              
+              if (categoryName.includes(term)) {
+                matchScore += 20;
+                matched = true;
+              }
+            }
+            
+            if (searchFilters.hsn && hsnCode) {
+              if (hsnCode === term) {
+                matchScore += 90;
+                matched = true;
+              }
+              
+              if (hsnCode.includes(term)) {
+                matchScore += 35;
+                matched = true;
+              }
+            }
+            
+            // Special case for last 4 digits of model number
+            if (searchFilters.lastDigits && term.length >= 2 && term.length <= 4 && /^\d+$/.test(term)) {
+              if (modelName.endsWith(term)) {
+                matchScore += 60;
+                matched = true;
+              }
+            }
+            
+            // If warranty includes the term
+            if (warranty.includes(term)) {
+              matchScore += 10;
+              matched = true;
+            }
+            
+            // Check for product code format searches
+            // Format: Brand-Model, Category-Brand, etc.
+            if (term.includes('-')) {
+              const [part1, part2] = term.split('-').map(p => p.trim());
+              
+              if (
+                (brandName.includes(part1) && modelName.includes(part2)) ||
+                (categoryName.includes(part1) && brandName.includes(part2))
+              ) {
+                matchScore += 60;
+                matched = true;
+              }
+            }
+            
+            // If any match was found, add to results with score
+            if (matched) {
               results.push({
                 id: `${category.category}-${category.brand}-${model.model}`,
                 category: category.category,
@@ -208,15 +386,19 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
                 model: model.model,
                 hsn_sac: model["HSN/SAC"],
                 warranty: model.warranty,
-                purchase_with_gst: model.purchase_with_GST,
-                sale_with_gst: model.sale_with_GST,
-                gst_percentage: GST_RATE
+                purchase_with_gst: model.purchase_with_GST || 0,
+                sale_with_gst: model.sale_with_GST || 0,
+                gst_percentage: GST_RATE,
+                matchScore: matchScore // Include match score for sorting
               });
             }
           });
         }
       });
     }
+    
+    // Sort results by match score (highest first)
+    results.sort((a, b) => b.matchScore - a.matchScore);
     
     setSearchResults(results);
     setShowSearchResults(results.length > 0);
@@ -231,10 +413,20 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
     };
     
     updateItem(newItem.id, newItem);
-    setSearchTerm('');
-    setSearchResults([]);
-    setShowSearchResults(false);
     setSuccessMessage(`${item.model} added to quotation`);
+  };
+
+  // Toggle advanced search options
+  const toggleAdvancedSearch = () => {
+    setAdvancedSearch(!advancedSearch);
+  };
+  
+  // Update search filters
+  const handleFilterChange = (filter) => {
+    setSearchFilters(prev => ({
+      ...prev,
+      [filter]: !prev[filter]
+    }));
   };
   
   return (
@@ -246,42 +438,124 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
         </h2>
       </div>
       
-      {/* Product Search Field */}
+      {/* Product Search Field with Advanced Options */}
       <div className="mb-4 relative">
         <div className="flex items-center bg-gray-700 border border-gray-600 rounded-lg overflow-hidden">
           <Search className="mx-3 h-5 w-5 text-gray-400" />
           <input 
+            ref={searchInputRef}
             type="text"
             value={searchTerm}
             onChange={handleProductSearch}
-            placeholder="Search for products to add (model, brand, category)..."
+            placeholder="Search for products (model, brand, category, HSN code, last digits)..."
             className="w-full bg-transparent border-none px-0 py-2 text-white focus:outline-none"
+            onFocus={() => {
+              // Show search results if there's a search term
+              if (searchTerm.trim() !== '') {
+                handleProductSearch({ target: { value: searchTerm } });
+                setShowSearchResults(true);
+              }
+            }}
           />
+          <button 
+            onClick={toggleAdvancedSearch}
+            className={`px-3 py-2 ${advancedSearch ? 'text-orange-500' : 'text-gray-400'} hover:text-orange-400`}
+          >
+            <Filter className="h-5 w-5" />
+          </button>
         </div>
         
-        {/* Search Results Dropdown */}
+        {/* Advanced Search Options */}
+        {advancedSearch && (
+          <div className="mt-2 p-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm">
+            <div className="font-medium mb-2">Search In:</div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <label className="flex items-center">
+                <input 
+                  type="checkbox" 
+                  checked={searchFilters.model}
+                  onChange={() => handleFilterChange('model')}
+                  className="mr-2 accent-orange-500"
+                />
+                Model Names
+              </label>
+              <label className="flex items-center">
+                <input 
+                  type="checkbox" 
+                  checked={searchFilters.brand}
+                  onChange={() => handleFilterChange('brand')}
+                  className="mr-2 accent-orange-500"
+                />
+                Brands
+              </label>
+              <label className="flex items-center">
+                <input 
+                  type="checkbox" 
+                  checked={searchFilters.category}
+                  onChange={() => handleFilterChange('category')}
+                  className="mr-2 accent-orange-500"
+                />
+                Categories
+              </label>
+              <label className="flex items-center">
+                <input 
+                  type="checkbox" 
+                  checked={searchFilters.hsn}
+                  onChange={() => handleFilterChange('hsn')}
+                  className="mr-2 accent-orange-500"
+                />
+                HSN/SAC Codes
+              </label>
+              <label className="flex items-center">
+                <input 
+                  type="checkbox" 
+                  checked={searchFilters.lastDigits}
+                  onChange={() => handleFilterChange('lastDigits')}
+                  className="mr-2 accent-orange-500"
+                />
+                Last Digits
+              </label>
+            </div>
+            <div className="mt-2 text-xs text-gray-400">
+              Tip: Use hyphens to combine searches, e.g., "HP-Pavilion" or "RAM-16GB"
+            </div>
+          </div>
+        )}
+        
+        {/* Search Results Dropdown - ALWAYS visible when there are results */}
         {showSearchResults && (
-          <div className="absolute z-20 mt-1 w-full bg-gray-800 border border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-            <ul className="py-1">
-              {searchResults.map(item => (
-                <li 
-                  key={item.id} 
-                  className="px-4 py-2 hover:bg-gray-700 cursor-pointer"
-                  onClick={() => handleAddItemFromSearch(item)}
-                >
-                  <div className="flex justify-between">
-                    <div>
-                      <span className="text-white font-medium">{item.model}</span>
-                      <span className="text-gray-400 ml-2">{item.category}</span>
+          <div 
+            ref={searchResultsRef}
+            className="absolute z-20 mt-1 w-full bg-gray-800 border border-gray-700 rounded-md shadow-lg max-h-72 overflow-auto"
+          >
+            {searchResults.length === 0 ? (
+              <div className="px-4 py-3 text-gray-400">No matching products found</div>
+            ) : (
+              <ul className="py-1">
+                {searchResults.map(item => (
+                  <li 
+                    key={item.id} 
+                    className="px-4 py-2 hover:bg-gray-700 cursor-pointer"
+                    onClick={() => handleAddItemFromSearch(item)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center mb-1">
+                          <span className="text-white font-medium">{item.model}</span>
+                          <span className="text-gray-400 text-sm ml-2">({item.category})</span>
+                        </div>
+                        <div className="text-gray-500 text-sm flex flex-wrap gap-2">
+                          <span>{item.brand}</span>
+                          {item.warranty && <span>• {item.warranty}</span>}
+                          {item.hsn_sac && <span>• HSN: {item.hsn_sac}</span>}
+                        </div>
+                      </div>
+                      <div className="text-green-500 font-medium ml-4">₹{formatDecimal(item.sale_with_gst)}</div>
                     </div>
-                    <div className="text-green-500">₹{item.sale_with_gst.toLocaleString()}</div>
-                  </div>
-                  <div className="text-gray-500 text-sm">
-                    {item.brand} • {item.warranty}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </div>
@@ -369,7 +643,7 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
                   </div>
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Total
+                  <div className="whitespace-nowrap">Margin</div>
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Actions
@@ -444,100 +718,73 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
                       <span className="text-gray-300">{item.warranty}</span>
                     )}
                   </td>
+                  
+                  {/* Always editable Quantity */}
                   <td className="px-3 py-4 whitespace-nowrap">
-                    {editingItemId === item.id ? (
+                    <input
+                      type="number"
+                      min="1"
+                      value={itemPrices[item.id]?.quantity || item.quantity}
+                      onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                      className="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                    />
+                  </td>
+                  
+                  {/* Purchase price without GST - Normal editable with rupee symbol */}
+                  <td className="px-3 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <span className="text-gray-400 mr-1">₹</span>
                       <input
-                        type="number"
-                        name="quantity"
-                        value={editData.quantity}
-                        onChange={handleEditChange}
-                        min="1"
-                        className="w-16 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-sm"
+                        type="text"
+                        value={formatDecimal(itemPrices[item.id]?.purchase_without_gst || calculatePriceWithoutGST(item.purchase_with_gst, item.gst_percentage))}
+                        onChange={(e) => handlePriceWithoutGSTChange(item.id, 'purchase_without_gst', e.target.value)}
+                        className="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
                       />
-                    ) : (
-                      <span className="text-white">{item.quantity}</span>
-                    )}
+                    </div>
                   </td>
                   
-                  {/* Purchase price without GST */}
+                  {/* Purchase price with GST - Normal editable with rupee symbol */}
                   <td className="px-3 py-4 whitespace-nowrap">
-                    {editingItemId === item.id ? (
-                      <div className="flex items-center">
-                        <span className="text-gray-400 mr-1">₹</span>
-                        <input
-                          type="number"
-                          name="purchase_without_gst"
-                          value={calculatePriceWithoutGST(editData.purchase_with_gst, editData.gst_percentage).toFixed(2)}
-                          onChange={handlePurchaseWithoutGSTChange}
-                          className="w-20 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-sm"
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-gray-300">
-                        ₹{calculatePriceWithoutGST(item.purchase_with_gst, item.gst_percentage).toFixed(2)}
-                      </span>
-                    )}
+                    <div className="flex items-center">
+                      <span className="text-gray-400 mr-1">₹</span>
+                      <input
+                        type="text"
+                        value={formatDecimal(itemPrices[item.id]?.purchase_with_gst || item.purchase_with_gst)}
+                        onChange={(e) => handlePriceWithGSTChange(item.id, 'purchase_with_gst', e.target.value)}
+                        className="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                      />
+                    </div>
                   </td>
                   
-                  {/* Purchase price with GST */}
+                  {/* Sale price without GST - Normal editable with rupee symbol */}
                   <td className="px-3 py-4 whitespace-nowrap">
-                    {editingItemId === item.id ? (
-                      <div className="flex items-center">
-                        <span className="text-gray-400 mr-1">₹</span>
-                        <input
-                          type="number"
-                          name="purchase_with_gst"
-                          value={editData.purchase_with_gst}
-                          onChange={handlePurchaseWithGSTChange}
-                          className="w-20 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-sm"
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-gray-300">₹{item.purchase_with_gst.toFixed(2)}</span>
-                    )}
+                    <div className="flex items-center">
+                      <span className="text-gray-400 mr-1">₹</span>
+                      <input
+                        type="text"
+                        value={formatDecimal(itemPrices[item.id]?.sale_without_gst || calculatePriceWithoutGST(item.sale_with_gst, item.gst_percentage))}
+                        onChange={(e) => handlePriceWithoutGSTChange(item.id, 'sale_without_gst', e.target.value)}
+                        className="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                      />
+                    </div>
                   </td>
                   
-                  {/* Sale price without GST */}
+                  {/* Sale price with GST - Normal editable with rupee symbol */}
                   <td className="px-3 py-4 whitespace-nowrap">
-                    {editingItemId === item.id ? (
-                      <div className="flex items-center">
-                        <span className="text-gray-400 mr-1">₹</span>
-                        <input
-                          type="number"
-                          name="sale_without_gst"
-                          value={calculatePriceWithoutGST(editData.sale_with_gst, editData.gst_percentage).toFixed(2)}
-                          onChange={handleSaleWithoutGSTChange}
-                          className="w-20 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-sm"
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-gray-300">
-                        ₹{calculatePriceWithoutGST(item.sale_with_gst, item.gst_percentage).toFixed(2)}
-                      </span>
-                    )}
+                    <div className="flex items-center">
+                      <span className="text-gray-400 mr-1">₹</span>
+                      <input
+                        type="text"
+                        value={formatDecimal(itemPrices[item.id]?.sale_with_gst || item.sale_with_gst)}
+                        onChange={(e) => handlePriceWithGSTChange(item.id, 'sale_with_gst', e.target.value)}
+                        className="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                      />
+                    </div>
                   </td>
                   
-                  {/* Sale price with GST */}
-                  <td className="px-3 py-4 whitespace-nowrap">
-                    {editingItemId === item.id ? (
-                      <div className="flex items-center">
-                        <span className="text-gray-400 mr-1">₹</span>
-                        <input
-                          type="number"
-                          name="sale_with_gst"
-                          value={editData.sale_with_gst}
-                          onChange={handleSaleWithGSTChange}
-                          className="w-20 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-white text-sm"
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-white">₹{item.sale_with_gst.toFixed(2)}</span>
-                    )}
-                  </td>
-                  
-                  {/* Total (Sale price with GST × Quantity) */}
-                  <td className="px-3 py-4 whitespace-nowrap text-white font-medium">
-                    ₹{(item.sale_with_gst * item.quantity).toFixed(2)}
+                  {/* Margin (Sale without GST - Purchase without GST) */}
+                  <td className="px-3 py-4 whitespace-nowrap text-green-500 font-medium">
+                    ₹{formatDecimal(calculateMargin(item))}
                   </td>
                   
                   {/* Actions */}
@@ -564,7 +811,7 @@ const ItemsTable = ({ setSuccessMessage, setErrorMessage }) => {
                         <button
                           onClick={() => handleEditStart(item)}
                           className="text-blue-500 hover:text-blue-400"
-                          title="Edit"
+                          title="Edit other fields"
                         >
                           <Edit className="h-5 w-5" />
                         </button>
