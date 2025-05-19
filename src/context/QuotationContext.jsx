@@ -56,6 +56,8 @@ export const QuotationProvider = ({ children }) => {
   // State for loading saved quotations
   const [savedQuotations, setSavedQuotations] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
+  const [allQuotations, setAllQuotations] = useState([]);
+  const [loadingAllQuotations, setLoadingAllQuotations] = useState(false);
 
   // State for the PC components data
   const [componentsData, setComponentsData] = useState([]);
@@ -66,6 +68,44 @@ export const QuotationProvider = ({ children }) => {
   const [isRevision, setIsRevision] = useState(false);
   const [revisionOf, setRevisionOf] = useState(null);
   const [revisionNumber, setRevisionNumber] = useState(0);
+
+  // Define the generateQuotationName function early to avoid initialization errors
+  const generateQuotationName = (partyId, version = 1) => {
+    if (!partyId) return "quote-unknown-1";
+    
+    // Take the first 8 characters of the party ID
+    // Add extra safety check for partyId
+    const shortPartyId = partyId ? partyId.substring(0, 8) : "unknown";
+    return `quote-${shortPartyId}-${version}`;
+  };
+
+  // Define findNextVersionNumber early as well
+  const findNextVersionNumber = (partyId) => {
+    if (!partyId || !Array.isArray(savedQuotations)) return 1;
+    
+    // Find all quotations for this party that follow our naming convention
+    const partyQuotations = savedQuotations.filter(quotation => {
+      const title = quotation.title || "";
+      return title.startsWith(`quote-${partyId ? partyId.substring(0, 8) : "unknown"}-`);
+    });
+    
+    if (partyQuotations.length === 0) return 1;
+    
+    // Extract versions from all matching quotations
+    let maxVersion = 0;
+    partyQuotations.forEach(quotation => {
+      const title = quotation.title || "";
+      const match = title.match(/quote-.*?-(\d+)$/);
+      if (match) {
+        const version = parseInt(match[1], 10);
+        if (version > maxVersion) {
+          maxVersion = version;
+        }
+      }
+    });
+    
+    return maxVersion + 1;
+  };
 
   // Handle adding a new item to the quotation
   const addItem = (item) => {
@@ -191,6 +231,13 @@ export const QuotationProvider = ({ children }) => {
 
     loadComponentsData();
   }, []);
+  
+  // Fetch all quotations on initial load (optional)
+  useEffect(() => {
+    // Call this if you want to automatically load all quotations when the app starts
+    // Uncomment the next line to enable auto-loading
+    // fetchAllQuotations();
+  }, []);
 
   // Load party quotations
   const loadPartyQuotations = async (partyId) => {
@@ -246,254 +293,257 @@ export const QuotationProvider = ({ children }) => {
     }
   };
 
-  // Update these functions in QuotationContext.jsx
-// Find the next revision number for a quotation base name
-const findNextRevisionNumber = (baseTitle) => {
-  // Filter quotations that match the base name pattern (Quote_partyID or Quote_partyID_v2, etc.)
-  const relatedQuotations = savedQuotations.filter((quotation) => {
-    const quotationTitle = quotation.title || "";
-    
-    // Match exact base title or base title with _v{number} suffix
-    return (
-      quotationTitle === baseTitle ||
-      new RegExp(`^${baseTitle}_v\\d+$`).test(quotationTitle)
-    );
-  });
-
-  if (relatedQuotations.length === 0) {
-    return 0; // No existing quotations, start with no suffix
-  }
-
-  // Find the highest revision number
-  let maxRevision = 0;
-  relatedQuotations.forEach((quotation) => {
-    const title = quotation.title || "";
-    const match = title.match(/_v(\d+)$/);
-    if (match) {
-      const revNum = parseInt(match[1], 10);
-      if (revNum > maxRevision) {
-        maxRevision = revNum;
-      }
-    }
-  });
-
-  return maxRevision + 1; // Return next revision number
-};
-
-// Create a revision title based on base title and revision number
-const createRevisionTitle = (baseTitle, revNum) => {
-  if (revNum === 0) {
-    return baseTitle;
-  }
-  return `${baseTitle}_v${revNum}`;
-};
-// Update just the saveQuotation function in QuotationContext.jsx
-const saveQuotation = async (options = {}) => {
-  try {
-    if (!selectedParty || !selectedParty._id) {
-      throw new Error("Please select a valid party for this quotation");
-    }
-
-    if (!Array.isArray(items) || items.length === 0) {
-      throw new Error("Please add at least one item to the quotation");
-    }
-
-    // Calculate totals
-    const total_purchase = Number(calculateTotalPurchase());
-    const total_sale = Number(calculateTotalSale());
-    const total_tax = Number(calculateTotalTax());
-
-    // Validate and clean items data - create new objects to avoid mutation
-    const validatedItems = items.map((item, index) => {
-      if (!item.category || !item.brand || !item.model) {
-        throw new Error(
-          `Item ${index + 1} is missing required fields (category, brand, model)`
-        );
-      }
-
-      // Get HSN/SAC from either property name
-      let hsn_sac = "";
-      if (item.hsn_sac) {
-        hsn_sac = String(item.hsn_sac).trim();
-      } else if (item["HSN/SAC"]) {
-        hsn_sac = String(item["HSN/SAC"]).trim();
-      } else {
-        hsn_sac = "84733099"; // Default HSN code for computer parts
-      }
-
-      // Create a NEW clean object without id fields
-      return {
-        category: String(item.category).trim(),
-        brand: String(item.brand).trim(),
-        model: String(item.model).trim(),
-        hsn_sac: hsn_sac,
-        warranty: String(item.warranty || "").trim(),
-        quantity: Number(item.quantity) || 1,
-        purchase_with_gst: Number(item.purchase_with_gst) || 0,
-        sale_with_gst: Number(item.sale_with_gst) || 0,
-        gst_percentage: Number(item.gst_percentage) || GST_RATE,
-      };
-    });
-
-    // Format dates
-    let validUntilDate;
+  // Load all quotations from the API
+  const fetchAllQuotations = async () => {
     try {
-      validUntilDate =
-        validUntil instanceof Date && !isNaN(validUntil.getTime())
-          ? validUntil.toISOString()
-          : new Date(
-              new Date().setDate(new Date().getDate() + 15)
-            ).toISOString();
-    } catch (e) {
-      console.error("Error formatting validUntil date:", e);
-      validUntilDate = new Date(
-        new Date().setDate(new Date().getDate() + 15)
-      ).toISOString();
-    }
+      setLoadingAllQuotations(true);
+      console.log('Fetching all quotations');
 
-    let quotationDateFormatted;
-    try {
-      quotationDateFormatted =
-        quotationDate instanceof Date && !isNaN(quotationDate.getTime())
-          ? quotationDate.toISOString()
-          : new Date().toISOString();
-    } catch (e) {
-      console.error("Error formatting quotationDate:", e);
-      quotationDateFormatted = new Date().toISOString();
-    }
-
-    // Base quotation title with party ID for better identification
-    const baseTitle = options.baseTitle || `Quote_${selectedParty._id}`;
-
-    // Revision handling
-    let nextRevNum = 0;
-    if (options.createRevision || isRevision) {
-      const sourceId = options.sourceQuotationId || revisionOf;
-      if (sourceId && Array.isArray(savedQuotations)) {
-        const sourceQuotation = savedQuotations.find(
-          (q) => q._id === sourceId
-        );
-        if (sourceQuotation) {
-          const sourceTitle = sourceQuotation.title || baseTitle;
-          nextRevNum = findNextRevisionNumber(sourceTitle);
-        } else {
-          nextRevNum = findNextRevisionNumber(baseTitle);
+      const response = await fetch(
+        'https://server12may.onrender.com/api/quotations',
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
         }
-      } else {
-        nextRevNum = findNextRevisionNumber(baseTitle);
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch quotations: ${response.status}`);
       }
+
+      const data = await response.json();
+      setAllQuotations(Array.isArray(data) ? data : []);
+
+      console.log(
+        `Retrieved ${Array.isArray(data) ? data.length : 0} total quotations`
+      );
+      return data;
+    } catch (error) {
+      console.error('Error loading all quotations:', error);
+      setAllQuotations([]);
+      throw error;
+    } finally {
+      setLoadingAllQuotations(false);
     }
+  };
 
-    // Generate title with revision number (using underscore format)
-    const quotationTitle = nextRevNum > 0 ? `${baseTitle}_v${nextRevNum}` : baseTitle;
-
-    // Prepare business details object - with null checks
-    const businessDetailsObj = {
-      name: businessDetails?.name || DEFAULT_BUSINESS.name,
-      address: businessDetails?.address || DEFAULT_BUSINESS.address,
-      phone: businessDetails?.phone || DEFAULT_BUSINESS.phone,
-      email: businessDetails?.email || DEFAULT_BUSINESS.email,
-      gstin: businessDetails?.gstin || DEFAULT_BUSINESS.gstin,
-      logo: businessDetails?.logo || DEFAULT_BUSINESS.logo,
-    };
-
-    // Prepare the quotation data - as a fresh object without any id field
-    const quotationData = {
-      party_id: selectedParty._id,
-      title: quotationTitle,
-      date: quotationDateFormatted,
-      valid_until: validUntilDate,
-      business_details: businessDetailsObj,
-      items: validatedItems,
-      total_amount: total_sale,
-      total_purchase: total_purchase,
-      total_tax: total_tax,
-      notes: notes || "",
-      terms_conditions: terms || "",
-      status: "draft",
-    };
-
-    // Add revision tracking if this is a revision
-    if (nextRevNum > 0) {
-      quotationData.revision_number = nextRevNum;
-      if (options.sourceQuotationId || revisionOf) {
-        quotationData.revision_of = options.sourceQuotationId || revisionOf;
-      }
-    }
-
-    console.log("Sending quotation data:", JSON.stringify(quotationData, null, 2));
-
-    // Send the request
-    let responseData;
-
+  // Updated save quotation function with new naming convention
+  const saveQuotation = async (options = {}) => {
     try {
-      const response = await fetch("https://server12may.onrender.com/api/quotations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(quotationData),
+      if (!selectedParty || !selectedParty._id) {
+        throw new Error("Please select a valid party for this quotation");
+      }
+
+      if (!Array.isArray(items) || items.length === 0) {
+        throw new Error("Please add at least one item to the quotation");
+      }
+
+      // Calculate totals
+      const total_purchase = Number(calculateTotalPurchase());
+      const total_sale = Number(calculateTotalSale());
+      const total_tax = Number(calculateTotalTax());
+
+      // Validate and clean items data - create new objects to avoid mutation
+      const validatedItems = items.map((item, index) => {
+        if (!item.category || !item.brand || !item.model) {
+          throw new Error(
+            `Item ${index + 1} is missing required fields (category, brand, model)`
+          );
+        }
+
+        // Get HSN/SAC from either property name
+        let hsn_sac = "";
+        if (item.hsn_sac) {
+          hsn_sac = String(item.hsn_sac).trim();
+        } else if (item["HSN/SAC"]) {
+          hsn_sac = String(item["HSN/SAC"]).trim();
+        } else {
+          hsn_sac = "84733099"; // Default HSN code for computer parts
+        }
+
+        // Create a NEW clean object without id fields
+        return {
+          category: String(item.category).trim(),
+          brand: String(item.brand).trim(),
+          model: String(item.model).trim(),
+          hsn_sac: hsn_sac,
+          warranty: String(item.warranty || "").trim(),
+          quantity: Number(item.quantity) || 1,
+          purchase_with_gst: Number(item.purchase_with_gst) || 0,
+          sale_with_gst: Number(item.sale_with_gst) || 0,
+          gst_percentage: Number(item.gst_percentage) || GST_RATE,
+        };
       });
 
-      // Check if response is OK
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error response:", errorText);
+      // Format dates
+      let validUntilDate;
+      try {
+        validUntilDate =
+          validUntil instanceof Date && !isNaN(validUntil.getTime())
+            ? validUntil.toISOString()
+            : new Date(
+                new Date().setDate(new Date().getDate() + 15)
+              ).toISOString();
+      } catch (e) {
+        console.error("Error formatting validUntil date:", e);
+        validUntilDate = new Date(
+          new Date().setDate(new Date().getDate() + 15)
+        ).toISOString();
+      }
 
-        // Try to parse as JSON if possible
-        try {
-          const errorJson = JSON.parse(errorText);
-          throw new Error(
-            errorJson.message || `Server error: ${response.status}`
-          );
-        } catch (jsonError) {
-          // If not valid JSON, use the text directly
-          throw new Error(
-            `Failed to save: ${response.status} ${response.statusText}. ${errorText}`
-          );
+      let quotationDateFormatted;
+      try {
+        quotationDateFormatted =
+          quotationDate instanceof Date && !isNaN(quotationDate.getTime())
+            ? quotationDate.toISOString()
+            : new Date().toISOString();
+      } catch (e) {
+        console.error("Error formatting quotationDate:", e);
+        quotationDateFormatted = new Date().toISOString();
+      }
+
+      // Determine version number for the quotation
+      let versionNumber = 1;
+      
+      if (options.createRevision || isRevision) {
+        const sourceId = options.sourceQuotationId || revisionOf;
+        if (sourceId && Array.isArray(savedQuotations)) {
+          const sourceQuotation = savedQuotations.find(q => q._id === sourceId);
+          
+          if (sourceQuotation && sourceQuotation.title) {
+            // Extract version from the title if it follows our format
+            const match = sourceQuotation.title.match(/quote-.*?-(\d+)$/);
+            if (match) {
+              versionNumber = parseInt(match[1], 10) + 1;
+            } else {
+              // If the title doesn't match our format, find the next version
+              versionNumber = findNextVersionNumber(selectedParty._id);
+            }
+          } else {
+            versionNumber = findNextVersionNumber(selectedParty._id);
+          }
+        } else {
+          versionNumber = findNextVersionNumber(selectedParty._id);
+        }
+      } else {
+        // For new quotations, check if there are existing ones for this party
+        versionNumber = findNextVersionNumber(selectedParty._id);
+      }
+      
+      // Generate the quotation name in our required format
+      const quotationTitle = generateQuotationName(selectedParty._id, versionNumber);
+
+      // Prepare business details object - with null checks
+      const businessDetailsObj = {
+        name: businessDetails?.name || DEFAULT_BUSINESS.name,
+        address: businessDetails?.address || DEFAULT_BUSINESS.address,
+        phone: businessDetails?.phone || DEFAULT_BUSINESS.phone,
+        email: businessDetails?.email || DEFAULT_BUSINESS.email,
+        gstin: businessDetails?.gstin || DEFAULT_BUSINESS.gstin,
+        logo: businessDetails?.logo || DEFAULT_BUSINESS.logo,
+      };
+
+      // Prepare the quotation data - as a fresh object without any id field
+      const quotationData = {
+        party_id: selectedParty._id,
+        title: quotationTitle,
+        quotation_number: quotationTitle, // Use the same format for the quotation number
+        date: quotationDateFormatted,
+        valid_until: validUntilDate,
+        business_details: businessDetailsObj,
+        items: validatedItems,
+        total_amount: total_sale,
+        total_purchase: total_purchase,
+        total_tax: total_tax,
+        notes: notes || "",
+        terms_conditions: terms || "",
+        status: "draft",
+      };
+
+      // Add revision tracking if this is a revision
+      if (versionNumber > 1) {
+        quotationData.revision_number = versionNumber;
+        if (options.sourceQuotationId || revisionOf) {
+          quotationData.revision_of = options.sourceQuotationId || revisionOf;
         }
       }
 
-      // Read the response body as text first
-      const responseText = await response.text();
-      console.log("Raw response:", responseText);
-      
-      // Parse the response
+      console.log("Sending quotation data:", JSON.stringify(quotationData, null, 2));
+
+      // Send the request
+      let responseData;
+
       try {
-        responseData = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("Error parsing response:", parseError);
-        throw new Error("Invalid JSON response from server");
+        const response = await fetch("https://server12may.onrender.com/api/quotations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(quotationData),
+        });
+
+        // Check if response is OK
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Error response:", errorText);
+
+          // Try to parse as JSON if possible
+          try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(
+              errorJson.message || `Server error: ${response.status}`
+            );
+          } catch (jsonError) {
+            // If not valid JSON, use the text directly
+            throw new Error(
+              `Failed to save: ${response.status} ${response.statusText}. ${errorText}`
+            );
+          }
+        }
+
+        // Read the response body as text first
+        const responseText = await response.text();
+        console.log("Raw response:", responseText);
+        
+        // Parse the response
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error("Error parsing response:", parseError);
+          throw new Error("Invalid JSON response from server");
+        }
+      } catch (fetchError) {
+        console.error("Fetch error:", fetchError);
+        throw new Error(`Request failed: ${fetchError.message}`);
       }
-    } catch (fetchError) {
-      console.error("Fetch error:", fetchError);
-      throw new Error(`Request failed: ${fetchError.message}`);
+
+      // If we got here, we have successfully parsed the response
+      const savedQuotation = responseData;
+
+      // Update the state with the savedQuotation
+      if (savedQuotation.quotation_number) {
+        setQuotationNumber(savedQuotation.quotation_number);
+      }
+      setSavedQuotations((prev) => [savedQuotation, ...prev]);
+      setCurrentQuotationId(savedQuotation._id);
+
+      // Update revision tracking state
+      if (versionNumber > 1) {
+        setIsRevision(true);
+        setRevisionNumber(versionNumber);
+        setRevisionOf(options.sourceQuotationId || revisionOf);
+      }
+
+      return savedQuotation;
+    } catch (error) {
+      console.error("Error saving quotation:", error);
+      throw error;
     }
-
-    // If we got here, we have successfully parsed the response
-    const savedQuotation = responseData;
-
-    // Update the state with the savedQuotation
-    if (savedQuotation.quotation_number) {
-      setQuotationNumber(savedQuotation.quotation_number);
-    }
-    setSavedQuotations((prev) => [savedQuotation, ...prev]);
-    setCurrentQuotationId(savedQuotation._id);
-
-    // Update revision tracking state if needed
-    if (nextRevNum > 0) {
-      setIsRevision(true);
-      setRevisionNumber(nextRevNum);
-      setRevisionOf(options.sourceQuotationId || revisionOf);
-    }
-
-    return savedQuotation;
-  } catch (error) {
-    console.error("Error saving quotation:", error);
-    throw error;
-  }
-};
+  };
 
   // Create a new revision of an existing quotation
   const createRevision = async (quotationId) => {
@@ -504,8 +554,7 @@ const saveQuotation = async (options = {}) => {
       // Then, save it as a revision
       return await saveQuotation({
         createRevision: true,
-        sourceQuotationId: quotationId,
-        baseTitle: quotation.title || `Quotation for ${selectedParty.name}`,
+        sourceQuotationId: quotationId
       });
     } catch (error) {
       console.error("Error creating revision:", error);
@@ -554,8 +603,18 @@ const saveQuotation = async (options = {}) => {
 
       // Set revision tracking information
       setCurrentQuotationId(quotation._id);
-      setIsRevision(!!quotation.revision_number);
-      setRevisionNumber(quotation.revision_number || 0);
+      
+      // Extract version from title if it follows our format
+      let extractedVersion = 1;
+      if (quotation.title) {
+        const match = quotation.title.match(/quote-.*?-(\d+)$/);
+        if (match) {
+          extractedVersion = parseInt(match[1], 10);
+        }
+      }
+      
+      setIsRevision(extractedVersion > 1);
+      setRevisionNumber(quotation.revision_number || extractedVersion);
       setRevisionOf(quotation.revision_of || null);
 
       return quotation;
@@ -630,6 +689,11 @@ const saveQuotation = async (options = {}) => {
     savedQuotations,
     loadingSaved,
     loadPartyQuotations,
+    
+    // All quotations
+    allQuotations,
+    loadingAllQuotations,
+    fetchAllQuotations,
 
     // Components data
     componentsData,
@@ -641,6 +705,10 @@ const saveQuotation = async (options = {}) => {
     revisionNumber,
     revisionOf,
     createRevision,
+
+    // New quotation naming functions
+    generateQuotationName,
+    findNextVersionNumber,
 
     // Actions
     saveQuotation,

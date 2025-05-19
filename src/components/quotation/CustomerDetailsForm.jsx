@@ -217,7 +217,7 @@ const fetchPartyById = async (id) => {
               <ul className="py-1">
                 {filteredParties.map((party) => (
                   <li
-                    key={party._id}
+                    key={party.partyId}
                     className="px-4 py-2 hover:bg-gray-700 cursor-pointer transition-colors duration-150"
                     onClick={() => handleSelectParty(party)}
                   >
@@ -245,7 +245,7 @@ const fetchPartyById = async (id) => {
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-400 mb-1">Party ID</label>
             <div className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white">
-              {selectedParty.id}
+              {selectedParty.partyId}
             </div>
           </div>
           

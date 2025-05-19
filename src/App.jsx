@@ -3,8 +3,12 @@ import { BrowserRouter as Router, Route, Routes, Navigate, useParams, useNavigat
 import PartyManagement from './pages/PartyManagement';
 import QuotationMaker from './components/QuotationMaker';
 import Navbar from './components/Navbar';
+import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import PartyDetails from './pages/PartyDetails';
+import QuotationsPage from './pages/QuotationsPage';
+import AllQuotationsPage from './pages/AllQuotationsPage';
+import { QuotationProvider } from './context/QuotationContext';
 
 // Route guard to prevent reloading the same party
 const PartyGuard = ({ navigatedPartyIds, setNavigatedPartyIds }) => {
@@ -36,30 +40,41 @@ function App() {
   const [navigatedPartyIds, setNavigatedPartyIds] = useState([]);
   
   return (
-    <Router>
-      <div className="flex flex-col min-h-screen">
-        <Navbar />
-        <div className="flex-grow">
-          <Routes>
-            <Route path="/parties" element={<PartyManagement />} />
-            <Route path="/quotations/:partyId" element={
-              <>
-                <PartyGuard 
-                  navigatedPartyIds={navigatedPartyIds}
-                  setNavigatedPartyIds={setNavigatedPartyIds}
-                />
-                <QuotationMaker />
-              </>
-            } />
-            <Route path="/quotations" element={<QuotationMaker />} />
-            {/* <Route path="/dashboard" element={<Navigate to="/dashboard" replace />} /> */}
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/parties/:partyId" element={<PartyDetails />} />
-            <Route path="/" element={<Navigate to="/parties" replace />} />
-          </Routes>
+    <QuotationProvider>
+      <Router>
+        <div className="flex h-screen bg-gray-100">
+          <Sidebar />
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <Navbar />
+            <main className="flex-1 overflow-y-auto p-4">
+              <Routes>
+                <Route path="/parties" element={<PartyManagement />} />
+                <Route path="/quotations/:partyId" element={
+                  <>
+                    <PartyGuard 
+                      navigatedPartyIds={navigatedPartyIds}
+                      setNavigatedPartyIds={setNavigatedPartyIds}
+                    />
+                    <QuotationMaker />
+                  </>
+                } />
+                <Route path="/quotations" element={<QuotationMaker />} />
+                <Route path="/quote" element={<QuotationsPage />} />
+                
+                {/* New route for all quotations */}
+                <Route path="/all-quotations" element={<AllQuotationsPage />} />
+                
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/parties/:partyId" element={<PartyDetails />} />
+                
+                {/* Updated root route to navigate to all quotations */}
+                <Route path="/" element={<Navigate to="/all-quotations" replace />} />
+              </Routes>
+            </main>
+          </div>
         </div>
-      </div>
-    </Router>
+      </Router>
+    </QuotationProvider>
   );
 }
 

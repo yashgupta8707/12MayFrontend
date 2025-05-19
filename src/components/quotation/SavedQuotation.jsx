@@ -14,7 +14,8 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
     currentQuotationId,
     isRevision,
     revisionNumber,
-    revisionOf
+    revisionOf,
+    saveQuotation // Add this function if it doesn't exist yet
   } = useQuotation();
   
   const [showQuotations, setShowQuotations] = useState(false);
@@ -77,13 +78,54 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
     }
   };
   
-  // Handle creating a revision
+  // Handle creating a revision with the new naming convention
   const handleCreateRevision = async (quotationId) => {
     try {
       setCreatingRevision(true);
       setProcessingQuotationId(quotationId);
+      
+      // Find the original quotation to get its details
+      const originalQuotation = savedQuotations.find(q => q._id === quotationId);
+      
+      if (!originalQuotation) {
+        throw new Error("Original quotation not found");
+      }
+      
+      // Get current version number from the quotation or from its title
+      let currentVersion = 1;
+      
+      // Check if the quotation has a revision_number field
+      if (originalQuotation.revision_number) {
+        currentVersion = parseInt(originalQuotation.revision_number, 10);
+      } 
+      // Check if the title contains a version number in the new format (quote-partyID-version)
+      else if (originalQuotation.title) {
+        const versionMatch = originalQuotation.title.match(/quote-.*?-(\d+)$/);
+        if (versionMatch) {
+          currentVersion = parseInt(versionMatch[1], 10);
+        }
+      }
+      
+      // Create the revision
       const revision = await createRevision(quotationId);
-      setSuccessMessage(`Revision ${revision.revision_number || 1} created successfully!`);
+      
+      // Generate the new quote name with the required format
+      const newVersion = currentVersion + 1;
+      const partyId = selectedParty?._id || originalQuotation.party_id;
+      const newQuoteName = `quote-${partyId}-${newVersion}`;
+      
+      // Update the revision with the new name format
+      // This assumes you have a function to update quotation details
+      // You might need to implement this in your QuotationContext
+      if (typeof saveQuotation === 'function') {
+        await saveQuotation({
+          ...revision,
+          title: newQuoteName,
+          quotation_number: newQuoteName
+        });
+      }
+      
+      setSuccessMessage(`Revision ${newVersion} created successfully!`);
       
       // Reload the quotations list
       if (selectedParty && selectedParty._id) {
@@ -164,34 +206,24 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
   
   const organizedQuotations = organizeQuotations(savedQuotations);
   
-  // Get revision indicator
-  const getRevisionIndicator = (quotation) => {
-    if (!quotation.revision_number && !quotation.title) {
-      return null;
+  // Get the formatted quotation name based on our new naming convention
+  const getFormattedQuotationName = (quotation) => {
+    // If the quotation already has the new format (quote-partyID-version), use it
+    if (quotation.title && quotation.title.startsWith('quote-')) {
+      return quotation.title;
     }
     
-    // If it has a revision number, show that
+    // Otherwise, generate a name in the new format
+    const partyId = quotation.party_id || selectedParty?._id || '';
+    const shortPartyId = partyId.substring(0, 8); // Use a shorter version of the party ID
+    
+    // Determine version
+    let version = 1;
     if (quotation.revision_number) {
-      return (
-        <span className="px-2 py-1 text-xs rounded-full bg-purple-600 text-white ml-2">
-          Rev {quotation.revision_number}
-        </span>
-      );
+      version = quotation.revision_number;
     }
     
-    // If it has a title with a revision pattern, extract that
-    if (quotation.title) {
-      const match = quotation.title.match(/\((\d+)\)$/);
-      if (match) {
-        return (
-          <span className="px-2 py-1 text-xs rounded-full bg-purple-600 text-white ml-2">
-            Rev {match[1]}
-          </span>
-        );
-      }
-    }
-    
-    return null;
+    return `quote-${shortPartyId}-${version}`;
   };
   
   return (
@@ -265,87 +297,86 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
                   </tr>
                 </thead>
                 <tbody className="bg-gray-800 divide-y divide-gray-700">
-                  {organizedQuotations.map((quotation) => (
-                    <tr key={quotation._id} className={`hover:bg-gray-750 ${
-                      quotation._id === currentQuotationId ? 'bg-blue-900 bg-opacity-30' : ''
-                    }`}>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <span className="font-medium text-white">
-                            {quotation.quotation_number || 'Draft'}
-                          </span>
-                          {getRevisionIndicator(quotation)}
-                          {quotation.title && (
-                            <span className="ml-2 text-gray-400 text-sm italic truncate max-w-xs">
-                              {quotation.title}
+                  {organizedQuotations.map((quotation) => {
+                    // Generate the formatted name in the required format
+                    const formattedName = getFormattedQuotationName(quotation);
+                    
+                    return (
+                      <tr key={quotation._id} className={`hover:bg-gray-750 ${
+                        quotation._id === currentQuotationId ? 'bg-blue-900 bg-opacity-30' : ''
+                      }`}>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <span className="font-medium text-white">
+                              {formattedName}
                             </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-gray-300">
-                        <div className="flex items-center">
-                          <Calendar className="h-3 w-3 mr-1 text-gray-500" />
-                          {formatDate(quotation.date)}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-gray-300">
-                        <div className="flex items-center">
-                          <Clock className="h-3 w-3 mr-1 text-gray-500" />
-                          {formatDate(quotation.valid_until)}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(quotation.status)}`}>
-                          {quotation.status ? (quotation.status.charAt(0).toUpperCase() + quotation.status.slice(1)) : 'Draft'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-green-400 font-medium">
-                        {quotation.total_amount !== undefined ? 
-                          `₹${Number(quotation.total_amount).toLocaleString()}` : 
-                          'N/A'}
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex justify-end space-x-2">
-                          <button
-                            onClick={() => handleLoadQuotation(quotation._id)}
-                            disabled={loadingQuotation || creatingRevision}
-                            className={`text-blue-500 hover:text-blue-400 ${
-                              processingQuotationId === quotation._id ? 'opacity-50' : ''
-                            }`}
-                            title="Load"
-                          >
-                            {processingQuotationId === quotation._id && loadingQuotation ? (
-                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-                            ) : (
-                              <ExternalLink className="h-5 w-5" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handlePrintQuotation(quotation._id)}
-                            disabled={loadingQuotation || creatingRevision}
-                            className="text-green-500 hover:text-green-400"
-                            title="Print"
-                          >
-                            <Printer className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => handleCreateRevision(quotation._id)}
-                            disabled={loadingQuotation || creatingRevision}
-                            className={`text-purple-500 hover:text-purple-400 ${
-                              processingQuotationId === quotation._id ? 'opacity-50' : ''
-                            }`}
-                            title="Create Revision"
-                          >
-                            {processingQuotationId === quotation._id && creatingRevision ? (
-                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500"></div>
-                            ) : (
-                              <GitBranch className="h-5 w-5" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-gray-300">
+                          <div className="flex items-center">
+                            <Calendar className="h-3 w-3 mr-1 text-gray-500" />
+                            {formatDate(quotation.date)}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-gray-300">
+                          <div className="flex items-center">
+                            <Clock className="h-3 w-3 mr-1 text-gray-500" />
+                            {formatDate(quotation.valid_until)}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(quotation.status)}`}>
+                            {quotation.status ? (quotation.status.charAt(0).toUpperCase() + quotation.status.slice(1)) : 'Draft'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-green-400 font-medium">
+                          {quotation.total_amount !== undefined ? 
+                            `₹${Number(quotation.total_amount).toLocaleString()}` : 
+                            'N/A'}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex justify-end space-x-2">
+                            <button
+                              onClick={() => handleLoadQuotation(quotation._id)}
+                              disabled={loadingQuotation || creatingRevision}
+                              className={`text-blue-500 hover:text-blue-400 ${
+                                processingQuotationId === quotation._id ? 'opacity-50' : ''
+                              }`}
+                              title="Load"
+                            >
+                              {processingQuotationId === quotation._id && loadingQuotation ? (
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                              ) : (
+                                <ExternalLink className="h-5 w-5" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handlePrintQuotation(quotation._id)}
+                              disabled={loadingQuotation || creatingRevision}
+                              className="text-green-500 hover:text-green-400"
+                              title="Print"
+                            >
+                              <Printer className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => handleCreateRevision(quotation._id)}
+                              disabled={loadingQuotation || creatingRevision}
+                              className={`text-purple-500 hover:text-purple-400 ${
+                                processingQuotationId === quotation._id ? 'opacity-50' : ''
+                              }`}
+                              title="Create Revision"
+                            >
+                              {processingQuotationId === quotation._id && creatingRevision ? (
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500"></div>
+                              ) : (
+                                <GitBranch className="h-5 w-5" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

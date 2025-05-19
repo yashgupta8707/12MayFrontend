@@ -250,7 +250,7 @@ const PartyDetails = () => {
                     <User className="h-5 w-5 text-gray-500 mt-0.5 mr-2" />
                     <div>
                       <p className="text-sm text-gray-500">Party ID</p>
-                      <p className="text-gray-800 font-medium">{party.id}</p>
+                      <p className="text-gray-800 font-medium">{party.partyId}</p>
                     </div>
                   </div>
                 )}
