@@ -14,7 +14,8 @@ import {
   ChevronUp,
   DollarSign,
   BarChart2,
-  Filter
+  Filter,
+  ShoppingBag,
 } from "lucide-react";
 import StatsCard from "../components/quotation/StatsCard";
 
@@ -75,30 +76,37 @@ const Dashboard = () => {
         }
 
         const quotationsData = await quotationsResponse.json();
-        
+
         // Process quotations to correctly associate with parties and calculate margins
-        const processedQuotations = quotationsData.map(quotation => {
+        const processedQuotations = quotationsData.map((quotation) => {
           // Find the associated party
           const associatedParty = partiesData.find(
-            party => party._id === quotation.party_id
+            (party) =>
+              party._id ===
+              (typeof quotation.party_id === "string"
+                ? quotation.party_id
+                : quotation.party_id?._id)
           );
-          
+
           // Calculate margin for each quotation
           const totalPurchase = quotation.total_purchase || 0;
           const totalAmount = quotation.total_amount || 0;
           const margin = totalAmount - totalPurchase;
-          
+
           return {
             ...quotation,
-            party: associatedParty || null,  // Attach the full party object
-            margin: margin,                  // Add margin calculation
-            margin_percentage: totalAmount > 0 ? (margin / totalAmount) * 100 : 0
+            party: associatedParty || quotation.party || null, // Attach the full party object
+            margin: margin, // Add margin calculation
+            margin_percentage:
+              totalAmount > 0 ? (margin / totalAmount) * 100 : 0,
           };
         });
 
         // Set data in state
         setParties(Array.isArray(partiesData) ? partiesData : []);
-        setQuotations(Array.isArray(processedQuotations) ? processedQuotations : []);
+        setQuotations(
+          Array.isArray(processedQuotations) ? processedQuotations : []
+        );
       } catch (err) {
         console.error("Error fetching dashboard data:", err);
         setError(err.message || "An error occurred while fetching data");
@@ -116,49 +124,60 @@ const Dashboard = () => {
       (sum, quote) => sum + (quote.total_amount || 0),
       0
     );
-    
+
     const totalPurchase = quotations.reduce(
       (sum, quote) => sum + (quote.total_purchase || 0),
       0
     );
-    
+
     const totalMargin = totalSales - totalPurchase;
-    const marginPercentage = totalSales > 0 ? (totalMargin / totalSales) * 100 : 0;
-    
+    const marginPercentage =
+      totalSales > 0 ? (totalMargin / totalSales) * 100 : 0;
+
     return {
       totalSales,
       totalPurchase,
       totalMargin,
       marginPercentage,
-      avgQuotationValue: quotations.length > 0 ? totalSales / quotations.length : 0,
-      avgMarginValue: quotations.length > 0 ? totalMargin / quotations.length : 0
+      avgQuotationValue:
+        quotations.length > 0 ? totalSales / quotations.length : 0,
+      avgMarginValue:
+        quotations.length > 0 ? totalMargin / quotations.length : 0,
     };
   };
 
   const getRecentQuotations = () => {
     // First, filter by search term if provided
     let filteredQuotations = [...quotations];
-    
+
     if (quotationSearchTerm.trim() !== "") {
       const searchLower = quotationSearchTerm.toLowerCase();
-      filteredQuotations = filteredQuotations.filter(quote => 
-        // Search in title
-        (quote.title && quote.title.toLowerCase().includes(searchLower)) ||
-        // Search in quotation number
-        (quote.quotation_number && quote.quotation_number.toLowerCase().includes(searchLower)) ||
-        // Search in party name
-        (quote.party && quote.party.name && quote.party.name.toLowerCase().includes(searchLower)) ||
-        // Search in amount (convert to string)
-        (String(quote.total_amount).includes(searchLower)) ||
-        // Search in date (formatted)
-        (formatDate(quote.date).toLowerCase().includes(searchLower))
+      filteredQuotations = filteredQuotations.filter(
+        (quote) =>
+          // Search in title
+          (quote.title && quote.title.toLowerCase().includes(searchLower)) ||
+          // Search in quotation number
+          (quote.quotation_number &&
+            quote.quotation_number.toLowerCase().includes(searchLower)) ||
+          // Search in party name
+          (quote.party &&
+            quote.party.name &&
+            quote.party.name.toLowerCase().includes(searchLower)) ||
+          // Search in amount (convert to string)
+          String(quote.total_amount || "").includes(searchLower) ||
+          // Search in date (formatted)
+          formatDate(quote.date).toLowerCase().includes(searchLower)
       );
     }
-    
+
     // Then sort by date and take first 5 (or all if filtered)
-    return quotationSearchTerm.trim() !== "" 
-      ? filteredQuotations.sort((a, b) => new Date(b.date) - new Date(a.date))
-      : filteredQuotations.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+    return quotationSearchTerm.trim() !== ""
+      ? filteredQuotations.sort(
+          (a, b) => new Date(b.date || 0) - new Date(a.date || 0)
+        )
+      : filteredQuotations
+          .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+          .slice(0, 5);
   };
 
   const getFilteredParties = () => {
@@ -170,23 +189,38 @@ const Dashboard = () => {
           party.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (party.phone && party.phone.includes(searchTerm)) ||
         (party.address &&
-          party.address.toLowerCase().includes(searchTerm.toLowerCase()))
+          party.address.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (party.partyId && party.partyId.includes(searchTerm))
     );
   };
 
   const getQuotationsForParty = (partyId) => {
-    return quotations.filter(
-      (quote) => quote.party && quote.party._id === partyId
-    );
+    if (!partyId) return [];
+
+    return quotations.filter((quote) => {
+      // Check several possible party ID locations
+      const quotePartyId =
+        (quote.party_id && typeof quote.party_id === "string"
+          ? quote.party_id
+          : null) ||
+        (quote.party_id && quote.party_id._id ? quote.party_id._id : null) ||
+        (quote.party && quote.party._id ? quote.party._id : null);
+
+      return quotePartyId === partyId;
+    });
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString("en-IN", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+    try {
+      return new Date(dateString).toLocaleDateString("en-IN", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch (e) {
+      return "N/A";
+    }
   };
 
   const formatCurrency = (amount) => {
@@ -195,6 +229,16 @@ const Dashboard = () => {
       currency: "INR",
       maximumFractionDigits: 0,
     }).format(amount || 0);
+  };
+
+  // Get the latest quotation for a party
+  const getLatestQuotationForParty = (partyId) => {
+    const partyQuotations = getQuotationsForParty(partyId);
+    if (partyQuotations.length === 0) return null;
+
+    return partyQuotations.sort(
+      (a, b) => new Date(b.date || 0) - new Date(a.date || 0)
+    )[0];
   };
 
   // Toggle expanded state for a party
@@ -301,7 +345,7 @@ const Dashboard = () => {
             title="Highest Quote Value"
             value={formatCurrency(
               quotations.length > 0
-                ? Math.max(...quotations.map(q => q.total_amount || 0))
+                ? Math.max(...quotations.map((q) => q.total_amount || 0))
                 : 0
             )}
             icon={<TrendingUp />}
@@ -314,7 +358,7 @@ const Dashboard = () => {
               quotations.length > 0
                 ? formatDate(
                     [...quotations].sort(
-                      (a, b) => new Date(b.date) - new Date(a.date)
+                      (a, b) => new Date(b.date || 0) - new Date(a.date || 0)
                     )[0].date
                   )
                 : "N/A"
@@ -356,6 +400,9 @@ const Dashboard = () => {
                   getFilteredParties().map((party) => {
                     const partyQuotations = getQuotationsForParty(party._id);
                     const isExpanded = expandedParty === party._id;
+                    const latestQuotation = getLatestQuotationForParty(
+                      party._id
+                    );
 
                     // Calculate total margin for this party's quotations
                     const partyTotalSales = partyQuotations.reduce(
@@ -366,10 +413,12 @@ const Dashboard = () => {
                       (sum, q) => sum + (q.total_purchase || 0),
                       0
                     );
-                    const partyTotalMargin = partyTotalSales - partyTotalPurchase;
-                    const partyMarginPercentage = partyTotalSales > 0 
-                      ? (partyTotalMargin / partyTotalSales) * 100 
-                      : 0;
+                    const partyTotalMargin =
+                      partyTotalSales - partyTotalPurchase;
+                    const partyMarginPercentage =
+                      partyTotalSales > 0
+                        ? (partyTotalMargin / partyTotalSales) * 100
+                        : 0;
 
                     return (
                       <div key={party._id} className="hover:bg-gray-50">
@@ -380,21 +429,38 @@ const Dashboard = () => {
                           <div className="flex justify-between items-center">
                             <div>
                               <h3 className="font-medium text-gray-800">
-                                {party.name}
+                                {party.name || "Unnamed Party"}
                               </h3>
-                              <p className="text-sm text-gray-600">
-                                {party.phone}
-                              </p>
+                              <div className="flex items-center text-sm text-gray-600">
+                                <Phone className="h-3 w-3 mr-1" />
+                                {party.phone || "No phone"}
+                              </div>
+                              {party.partyId && (
+                                <div className="flex items-center text-xs text-gray-500 mt-1">
+                                  <span className="text-gray-400">ID: </span>
+                                  <span className="ml-1">{party.partyId}</span>
+                                </div>
+                              )}
                             </div>
-                            <div className="flex items-center">
+                            <div className="flex flex-col items-end">
                               <span className="bg-orange-100 text-orange-800 text-xs font-medium px-2.5 py-0.5 rounded">
                                 {partyQuotations.length} Quotes
                               </span>
-                              {isExpanded ? (
-                                <ChevronUp className="h-5 w-5 ml-2 text-gray-400" />
-                              ) : (
-                                <ChevronDown className="h-5 w-5 ml-2 text-gray-400" />
+
+                              {partyQuotations.length > 0 && (
+                                <span className="text-xs text-green-600 font-medium mt-1">
+                                  {formatCurrency(partyTotalMargin)} (
+                                  {partyMarginPercentage.toFixed(1)}%)
+                                </span>
                               )}
+
+                              <div className="mt-1">
+                                {isExpanded ? (
+                                  <ChevronUp className="h-5 w-5 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="h-5 w-5 text-gray-400" />
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -424,9 +490,25 @@ const Dashboard = () => {
                                   Total Sales: {formatCurrency(partyTotalSales)}
                                 </p>
                                 <p className="text-sm font-medium text-green-600">
-                                  Total Margin: {formatCurrency(partyTotalMargin)} 
-                                  {" "}({partyMarginPercentage.toFixed(2)}%)
+                                  Total Margin:{" "}
+                                  {formatCurrency(partyTotalMargin)} (
+                                  {partyMarginPercentage.toFixed(2)}%)
                                 </p>
+
+                                {/* Latest quotation margin */}
+                                {latestQuotation && (
+                                  <p className="text-sm mt-1 text-blue-600">
+                                    Latest Quote Margin:{" "}
+                                    {formatCurrency(
+                                      latestQuotation.margin || 0
+                                    )}{" "}
+                                    (
+                                    {(
+                                      latestQuotation.margin_percentage || 0
+                                    ).toFixed(2)}
+                                    %)
+                                  </p>
+                                )}
                               </div>
                             )}
 
@@ -437,31 +519,46 @@ const Dashboard = () => {
                               {partyQuotations.length > 0 ? (
                                 <ul className="space-y-2">
                                   {partyQuotations
-                                    .sort((a, b) => new Date(b.date) - new Date(a.date))
+                                    .sort(
+                                      (a, b) =>
+                                        new Date(b.date || 0) -
+                                        new Date(a.date || 0)
+                                    )
                                     .slice(0, 3)
                                     .map((quote) => (
-                                    <li key={quote._id} className="text-sm">
-                                      <Link
-                                        to={`/quotations/${party._id}?id=${quote._id}`}
-                                        className="flex justify-between items-center py-1 px-2 hover:bg-gray-100 rounded"
-                                      >
-                                        <span className="font-medium">
-                                          {quote.title || `${party.name} Quotation`}
-                                        </span>
-                                        <span className="text-gray-600">
-                                          {formatDate(quote.date)}
-                                        </span>
-                                        <div className="text-right">
-                                          <span className="font-medium text-green-600">
-                                            {formatCurrency(quote.total_amount)}
+                                      <li key={quote._id} className="text-sm">
+                                        <Link
+                                          to={`/quotations/${party._id}?id=${quote._id}`}
+                                          className="flex justify-between items-center py-1 px-2 hover:bg-gray-100 rounded"
+                                        >
+                                          <span className="font-medium">
+                                            {quote.title ||
+                                              `${party.name} Quotation`}
                                           </span>
-                                          <span className="block text-xs text-green-700">
-                                            Margin: {formatCurrency(quote.margin)} ({quote.margin_percentage.toFixed(2)}%)
+                                          <span className="text-gray-600">
+                                            {formatDate(quote.date)}
                                           </span>
-                                        </div>
-                                      </Link>
-                                    </li>
-                                  ))}
+                                          <div className="text-right">
+                                            <span className="font-medium text-green-600">
+                                              {formatCurrency(
+                                                quote.total_amount || 0
+                                              )}
+                                            </span>
+                                            <span className="block text-xs text-green-700">
+                                              Margin:{" "}
+                                              {formatCurrency(
+                                                quote.margin || 0
+                                              )}{" "}
+                                              (
+                                              {(
+                                                quote.margin_percentage || 0
+                                              ).toFixed(1)}
+                                              %)
+                                            </span>
+                                          </div>
+                                        </Link>
+                                      </li>
+                                    ))}
                                 </ul>
                               ) : (
                                 <p className="text-sm text-gray-500">
@@ -513,11 +610,16 @@ const Dashboard = () => {
                 <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                   <div>
                     <h2 className="text-xl font-semibold text-gray-800">
-                      {selectedParty.name}
+                      {selectedParty.name || "Unnamed Party"}
                     </h2>
                     <p className="text-sm text-gray-600">
-                      {selectedParty.phone}
+                      {selectedParty.phone || "No phone"}
                     </p>
+                    {selectedParty.partyId && (
+                      <p className="text-xs text-gray-500">
+                        ID: {selectedParty.partyId}
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => setSelectedParty(null)}
@@ -536,11 +638,11 @@ const Dashboard = () => {
                       <div className="bg-gray-50 p-3 rounded border border-gray-200">
                         <p className="flex items-center text-gray-700">
                           <User className="h-4 w-4 mr-2 text-gray-500" />
-                          {selectedParty.name}
+                          {selectedParty.name || "Unnamed Party"}
                         </p>
                         <p className="flex items-center text-gray-700 mt-2">
                           <Phone className="h-4 w-4 mr-2 text-gray-500" />
-                          {selectedParty.phone}
+                          {selectedParty.phone || "No phone"}
                         </p>
                         {selectedParty.address && (
                           <p className="flex items-start text-gray-700 mt-2">
@@ -564,10 +666,12 @@ const Dashboard = () => {
                             {getQuotationsForParty(selectedParty._id).length}
                           </span>
                         </div>
-                        
+
                         {/* Calculate party totals */}
                         {(() => {
-                          const partyQuotes = getQuotationsForParty(selectedParty._id);
+                          const partyQuotes = getQuotationsForParty(
+                            selectedParty._id
+                          );
                           const totalValue = partyQuotes.reduce(
                             (sum, q) => sum + (q.total_amount || 0),
                             0
@@ -577,26 +681,58 @@ const Dashboard = () => {
                             0
                           );
                           const totalMargin = totalValue - totalPurchase;
-                          const marginPercentage = totalValue > 0 ? (totalMargin / totalValue) * 100 : 0;
-                          
+                          const marginPercentage =
+                            totalValue > 0
+                              ? (totalMargin / totalValue) * 100
+                              : 0;
+
+                          // Get latest quotation margin if available
+                          const latestQuote =
+                            partyQuotes.length > 0
+                              ? partyQuotes.sort(
+                                  (a, b) =>
+                                    new Date(b.date || 0) -
+                                    new Date(a.date || 0)
+                                )[0]
+                              : null;
+
                           return (
                             <>
                               <div className="flex justify-between mb-2">
-                                <span className="text-gray-600">Total Value:</span>
+                                <span className="text-gray-600">
+                                  Total Value:
+                                </span>
                                 <span className="font-medium text-gray-800">
                                   {formatCurrency(totalValue)}
                                 </span>
                               </div>
                               <div className="flex justify-between mb-2">
-                                <span className="text-gray-600">Total Margin:</span>
+                                <span className="text-gray-600">
+                                  Total Margin:
+                                </span>
                                 <span className="font-medium text-green-600">
-                                  {formatCurrency(totalMargin)} ({marginPercentage.toFixed(2)}%)
+                                  {formatCurrency(totalMargin)} (
+                                  {marginPercentage.toFixed(2)}%)
                                 </span>
                               </div>
+                              {latestQuote && (
+                                <div className="flex justify-between mb-2">
+                                  <span className="text-gray-600">
+                                    Latest Quote Margin:
+                                  </span>
+                                  <span className="font-medium text-blue-600">
+                                    {formatCurrency(latestQuote.margin || 0)} (
+                                    {(
+                                      latestQuote.margin_percentage || 0
+                                    ).toFixed(2)}
+                                    %)
+                                  </span>
+                                </div>
+                              )}
                             </>
                           );
                         })()}
-                        
+
                         <div className="flex justify-between">
                           <span className="text-gray-600">
                             Latest Quotation:
@@ -606,7 +742,8 @@ const Dashboard = () => {
                               ? formatDate(
                                   getQuotationsForParty(selectedParty._id).sort(
                                     (a, b) =>
-                                      new Date(b.date) - new Date(a.date)
+                                      new Date(b.date || 0) -
+                                      new Date(a.date || 0)
                                   )[0].date
                                 )
                               : "N/A"}
@@ -663,7 +800,10 @@ const Dashboard = () => {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {getQuotationsForParty(selectedParty._id)
-                            .sort((a, b) => new Date(b.date) - new Date(a.date))
+                            .sort(
+                              (a, b) =>
+                                new Date(b.date || 0) - new Date(a.date || 0)
+                            )
                             .map((quotation) => (
                               <tr
                                 key={quotation._id}
@@ -671,7 +811,8 @@ const Dashboard = () => {
                               >
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   <div className="text-sm font-medium text-gray-900">
-                                    {quotation.title || `${selectedParty.name} Quotation`}
+                                    {quotation.title ||
+                                      `${selectedParty.name} Quotation`}
                                   </div>
                                   {quotation.quotation_number && (
                                     <div className="text-xs text-gray-500">
@@ -688,17 +829,17 @@ const Dashboard = () => {
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   <span
                                     className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                    ${
-                                      quotation.status === "draft"
-                                        ? "bg-gray-100 text-gray-800"
-                                        : quotation.status === "sent"
-                                        ? "bg-blue-100 text-blue-800"
-                                        : quotation.status === "accepted"
-                                        ? "bg-green-100 text-green-800"
-                                        : quotation.status === "rejected"
-                                        ? "bg-red-100 text-red-800"
-                                        : "bg-yellow-100 text-yellow-800"
-                                    }`}
+      ${
+        quotation.status === "draft"
+          ? "bg-gray-100 text-gray-800"
+          : quotation.status === "sent"
+          ? "bg-blue-100 text-blue-800"
+          : quotation.status === "accepted"
+          ? "bg-green-100 text-green-800"
+          : quotation.status === "rejected"
+          ? "bg-red-100 text-red-800"
+          : "bg-yellow-100 text-yellow-800"
+      }`}
                                   >
                                     {quotation.status?.charAt(0).toUpperCase() +
                                       quotation.status?.slice(1) || "Draft"}
@@ -709,10 +850,13 @@ const Dashboard = () => {
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                   <div className="text-sm font-medium text-green-600">
-                                    {formatCurrency(quotation.margin)}
+                                    {formatCurrency(quotation.margin || 0)}
                                   </div>
                                   <div className="text-xs text-green-700">
-                                    {quotation.margin_percentage.toFixed(2)}%
+                                    {(quotation.margin_percentage || 0).toFixed(
+                                      2
+                                    )}
+                                    %
                                   </div>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -748,7 +892,7 @@ const Dashboard = () => {
                   <h2 className="text-xl font-semibold text-gray-800">
                     Recent Quotations
                   </h2>
-                  
+
                   {/* Quotation Search */}
                   <div className="mt-3 relative">
                     <input
@@ -759,34 +903,40 @@ const Dashboard = () => {
                       className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                     <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                    <button 
+                    <button
                       className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
                       onClick={() => setFilterModalOpen(!filterModalOpen)}
                     >
                       <Filter className="h-5 w-5" />
                     </button>
-                    
+
                     {/* Filter dropdown - can be expanded if needed */}
                     {filterModalOpen && (
                       <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-10 border border-gray-200">
                         <div className="p-3">
-                          <p className="text-sm font-medium text-gray-700 mb-2">Filter by:</p>
+                          <p className="text-sm font-medium text-gray-700 mb-2">
+                            Filter by:
+                          </p>
                           <div className="space-y-2">
                             <label className="flex items-center text-sm">
-                              <input type="checkbox" className="mr-2" /> Party Name
+                              <input type="checkbox" className="mr-2" /> Party
+                              Name
                             </label>
                             <label className="flex items-center text-sm">
-                              <input type="checkbox" className="mr-2" /> Quotation Number
+                              <input type="checkbox" className="mr-2" />{" "}
+                              Quotation Number
                             </label>
                             <label className="flex items-center text-sm">
-                              <input type="checkbox" className="mr-2" /> Date Range
+                              <input type="checkbox" className="mr-2" /> Date
+                              Range
                             </label>
                             <label className="flex items-center text-sm">
-                              <input type="checkbox" className="mr-2" /> Amount Range
+                              <input type="checkbox" className="mr-2" /> Amount
+                              Range
                             </label>
                           </div>
                           <div className="mt-3 flex justify-end">
-                            <button 
+                            <button
                               className="bg-orange-600 text-white px-3 py-1 rounded text-sm"
                               onClick={() => setFilterModalOpen(false)}
                             >
@@ -804,8 +954,8 @@ const Dashboard = () => {
                     <div className="text-center py-8">
                       <FileText className="h-10 w-10 text-gray-400 mx-auto mb-2" />
                       <p className="text-gray-600">
-                        {quotationSearchTerm.trim() !== "" 
-                          ? "No quotations found matching your search" 
+                        {quotationSearchTerm.trim() !== ""
+                          ? "No quotations found matching your search"
                           : "No quotations yet"}
                       </p>
                       {quotationSearchTerm.trim() !== "" && (
@@ -823,7 +973,8 @@ const Dashboard = () => {
                         <div className="flex justify-between items-start">
                           <div>
                             <div className="text-sm font-medium text-gray-900">
-                              {quotation.party?.name}: {quotation.title || "Quotation"}
+                              {quotation.party?.name || "Unknown Party"}:{" "}
+                              {quotation.title || "Quotation"}
                             </div>
                             {quotation.quotation_number && (
                               <div className="text-xs text-gray-500">
@@ -836,10 +987,11 @@ const Dashboard = () => {
                           </div>
                           <div className="text-right">
                             <div className="text-sm font-medium text-green-600">
-                              {formatCurrency(quotation.total_amount)}
+                              {formatCurrency(quotation.total_amount || 0)}
                             </div>
                             <div className="text-xs text-green-700">
-                              Margin: {formatCurrency(quotation.margin)} ({quotation.margin_percentage.toFixed(2)}%)
+                              Margin: {formatCurrency(quotation.margin || 0)} (
+                              {(quotation.margin_percentage || 0).toFixed(2)}%)
                             </div>
                             <div className="text-xs text-gray-500 flex items-center justify-end mt-1">
                               <Calendar className="h-3 w-3 mr-1" />{" "}
@@ -869,7 +1021,9 @@ const Dashboard = () => {
 
                           <div className="flex space-x-2">
                             <Link
-                              to={`/quotations/${quotation.party?._id}?id=${quotation._id}`}
+                              to={`/quotations/${
+                                quotation.party?._id || quotation.party_id
+                              }?id=${quotation._id}`}
                               className="text-orange-600 hover:text-orange-900 text-sm"
                             >
                               View

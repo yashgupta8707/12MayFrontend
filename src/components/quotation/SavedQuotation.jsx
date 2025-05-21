@@ -15,7 +15,8 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
     isRevision,
     revisionNumber,
     revisionOf,
-    saveQuotation // Add this function if it doesn't exist yet
+    generateQuotationName, // Use this function from context instead
+    saveQuotation
   } = useQuotation();
   
   const [showQuotations, setShowQuotations] = useState(false);
@@ -43,7 +44,7 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
         loadPartyQuotations(selectedParty._id);
       }
     }
-  }, [selectedParty?._id, showQuotations]); // Only depend on the ID and visibility
+  }, [selectedParty?._id, showQuotations, loadPartyQuotations]); 
   
   // Toggle quotations visibility
   const toggleQuotations = () => {
@@ -84,48 +85,8 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
       setCreatingRevision(true);
       setProcessingQuotationId(quotationId);
       
-      // Find the original quotation to get its details
-      const originalQuotation = savedQuotations.find(q => q._id === quotationId);
-      
-      if (!originalQuotation) {
-        throw new Error("Original quotation not found");
-      }
-      
-      // Get current version number from the quotation or from its title
-      let currentVersion = 1;
-      
-      // Check if the quotation has a revision_number field
-      if (originalQuotation.revision_number) {
-        currentVersion = parseInt(originalQuotation.revision_number, 10);
-      } 
-      // Check if the title contains a version number in the new format (quote-partyID-version)
-      else if (originalQuotation.title) {
-        const versionMatch = originalQuotation.title.match(/quote-.*?-(\d+)$/);
-        if (versionMatch) {
-          currentVersion = parseInt(versionMatch[1], 10);
-        }
-      }
-      
-      // Create the revision
       const revision = await createRevision(quotationId);
-      
-      // Generate the new quote name with the required format
-      const newVersion = currentVersion + 1;
-      const partyId = selectedParty?._id || originalQuotation.party_id;
-      const newQuoteName = `quote-${partyId}-${newVersion}`;
-      
-      // Update the revision with the new name format
-      // This assumes you have a function to update quotation details
-      // You might need to implement this in your QuotationContext
-      if (typeof saveQuotation === 'function') {
-        await saveQuotation({
-          ...revision,
-          title: newQuoteName,
-          quotation_number: newQuoteName
-        });
-      }
-      
-      setSuccessMessage(`Revision ${newVersion} created successfully!`);
+      setSuccessMessage(`Revision created successfully!`);
       
       // Reload the quotations list
       if (selectedParty && selectedParty._id) {
@@ -206,16 +167,40 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
   
   const organizedQuotations = organizeQuotations(savedQuotations);
   
-  // Get the formatted quotation name based on our new naming convention
+  // Get the formatted quotation title - FIXED VERSION
   const getFormattedQuotationName = (quotation) => {
-    // If the quotation already has the new format (quote-partyID-version), use it
-    if (quotation.title && quotation.title.startsWith('quote-')) {
+    // If the title already exists and starts with "quote-", use it
+    if (quotation.title && typeof quotation.title === 'string' && quotation.title.startsWith('quote-')) {
       return quotation.title;
     }
     
-    // Otherwise, generate a name in the new format
-    const partyId = quotation.party_id || selectedParty?._id || '';
-    const shortPartyId = partyId.substring(0, 8); // Use a shorter version of the party ID
+    // If quotation number exists and starts with "quote-", use it
+    if (quotation.quotation_number && typeof quotation.quotation_number === 'string' && 
+        quotation.quotation_number.startsWith('quote-')) {
+      return quotation.quotation_number;
+    }
+    
+    // Extract partyId safely, ensuring it exists and is a string
+    let partyId = '';
+    
+    // Try to get party ID from different possible sources
+    if (quotation.party_id) {
+      if (typeof quotation.party_id === 'string') {
+        partyId = quotation.party_id;
+      } else if (quotation.party_id._id && typeof quotation.party_id._id === 'string') {
+        partyId = quotation.party_id._id;
+      }
+    } else if (quotation.party && quotation.party._id && typeof quotation.party._id === 'string') {
+      partyId = quotation.party._id;
+    } else if (selectedParty && selectedParty._id && typeof selectedParty._id === 'string') {
+      partyId = selectedParty._id;
+    }
+    
+    // Safely get a shortened version of the party ID
+    let shortPartyId = 'unknown';
+    if (partyId && typeof partyId === 'string') {
+      shortPartyId = partyId.substring(0, Math.min(8, partyId.length));
+    }
     
     // Determine version
     let version = 1;
@@ -298,8 +283,14 @@ const SavedQuotations = ({ setSuccessMessage, setErrorMessage }) => {
                 </thead>
                 <tbody className="bg-gray-800 divide-y divide-gray-700">
                   {organizedQuotations.map((quotation) => {
-                    // Generate the formatted name in the required format
-                    const formattedName = getFormattedQuotationName(quotation);
+                    // Try-catch to prevent any errors in rendering
+                    let formattedName;
+                    try {
+                      formattedName = getFormattedQuotationName(quotation);
+                    } catch (error) {
+                      console.error("Error formatting quotation name:", error);
+                      formattedName = `Quotation ${quotation._id?.substring(0, 6) || "Unknown"}`;
+                    }
                     
                     return (
                       <tr key={quotation._id} className={`hover:bg-gray-750 ${
